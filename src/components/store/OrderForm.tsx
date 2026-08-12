@@ -15,11 +15,13 @@ import { tierSubtotal, formatDZD } from "@/config/pricing";
 import { WILAYAS } from "@/lib/wilayas";
 import { communesForWilaya } from "@/lib/communes";
 import { createOrder, OrderError } from "@/lib/orders";
+import { normalizePhone } from "@/lib/sanitize";
 import { t } from "@/lib/i18n";
 import type { DeliveryId } from "@/config/product";
 import { useReveal } from "@/hooks/use-reveal";
 import { useOnlineStatus } from "@/hooks/use-online-status";
 
+// Client-side validation: raw phone input → normalized → validated
 const ALGERIAN_PHONE = /^(0)(5|6|7)\d{8}$/;
 
 const AUTOSAVE_KEY = "drmelaxin_form_draft";
@@ -42,7 +44,8 @@ export function OrderForm({
   const isOnline = useOnlineStatus();
   const submittedRef = useRef(false); // double-submit prevention
 
-  const phoneValid = ALGERIAN_PHONE.test(phone.trim());
+  // Phone validation via normalizePhone (handles +213, spaces, dashes)
+  const phoneValid = !!normalizePhone(phone);
   const formValid = !disabled && fullName.trim().length >= 3 && phoneValid && wilayaId !== null && communeId !== null && isOnline;
 
   const communes = useMemo(() => (wilayaId !== null ? communesForWilaya(wilayaId) : []), [wilayaId]);

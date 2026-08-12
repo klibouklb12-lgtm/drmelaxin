@@ -13,7 +13,7 @@ export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<"product" | "stock" | "stats">("product");
+  const [tab, setTab] = useState<"product" | "stock" | "stats" | "health">("product");
   const [saved, setSaved] = useState(false);
 
   // Product fields
@@ -117,12 +117,12 @@ export default function AdminPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2">
-          {(["product", "stock", "stats"] as const).map(t => (
+        <div className="flex gap-2 flex-wrap">
+          {(["product", "stock", "stats", "health"] as const).map(t => (
             <button key={t} onClick={() => setTab(t)}
-              className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${tab === t ? "text-white" : "bg-white text-burgundy border border-burgundy/15"}`}
+              className={`flex-1 min-w-[80px] py-2 rounded-xl text-sm font-bold transition-all ${tab === t ? "text-white" : "bg-white text-burgundy border border-burgundy/15"}`}
               style={tab === t ? { background: "var(--burgundy)" } : {}}>
-              {t === "product" ? "المنتج" : t === "stock" ? "المخزون" : "الإحصائيات"}
+              {t === "product" ? "المنتج" : t === "stock" ? "المخزون" : t === "stats" ? "الإحصائيات" : "الحالة"}
             </button>
           ))}
         </div>
@@ -226,6 +226,147 @@ export default function AdminPage() {
             </p>
           </div>
         )}
+
+        {/* Health Tab — diagnose sheet connection + offline orders */}
+        {tab === "health" && (
+          <HealthTab />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Health Tab — shows sheet connection status + offline-queued orders.
+ * Lets admin diagnose why orders might be failing.
+ */
+function HealthTab() {
+  const [sheetStatus, setSheetStatus] = useState<"checking" | "ok" | "fail">("checking");
+  const [sheetMessage, setSheetMessage] = useState("");
+  const [offlineCount, setOfflineCount] = useState(0);
+  const [offlineOrders, setOfflineOrders] = useState<Array<Record<string, unknown>>>([]);
+
+  // Check sheet health
+  useEffect(() => {
+    if (!SHEET_URL) {
+      setSheetStatus("fail");
+      setSheetMessage("NEXT_PUBLIC_GOOGLE_SHEET_URL not set in env vars");
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    fetch(`${SHEET_URL}?action=stock`, { signal: controller.signal })
+      .then(r => {
+        clearTimeout(timeoutId);
+        if (!r.ok) {
+          setSheetStatus("fail");
+          setSheetMessage(`HTTP ${r.status} — sheet returned error`);
+          return;
+        }
+        return r.text();
+      })
+      .then(text => {
+        if (!text) return;
+        if (text.trim().startsWith("{")) {
+          try {
+            const data = JSON.parse(text);
+            if (data.stock !== undefined) {
+              setSheetStatus("ok");
+              setSheetMessage(`Connected. Stock: ${data.stock}`);
+            } else {
+              setSheetStatus("fail");
+              setSheetMessage("Sheet responded but missing stock field");
+            }
+          } catch {
+            setSheetStatus("fail");
+            setSheetMessage("Invalid JSON response from sheet");
+          }
+        } else {
+          setSheetStatus("fail");
+          setSheetMessage("Sheet returned HTML (not JSON) — deployment may be broken");
+        }
+      })
+      .catch(err => {
+        clearTimeout(timeoutId);
+        setSheetStatus("fail");
+        setSheetMessage(err.name === "AbortError" ? "Timeout (10s)" : err.message);
+      });
+  }, []);
+
+  // Check offline-queued orders
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("drmelaxin_offline_orders");
+      if (raw) {
+        const queue = JSON.parse(raw);
+        if (Array.isArray(queue)) {
+          setOfflineCount(queue.length);
+          setOfflineOrders(queue.map((item: { payload: Record<string, unknown>; ts: number }) => ({
+            ...item.payload,
+            timestamp: new Date(item.ts).toLocaleString(),
+          })));
+        }
+      }
+    } catch {}
+  }, []);
+
+  return (
+    <div className="bg-white rounded-3xl p-6 shadow-lg border-2 space-y-4" style={{ borderColor: "rgba(139, 21, 56, 0.15)" }}>
+      <h2 className="text-lg font-bold" style={{ fontFamily: "var(--font-arabic)", color: "var(--burgundy)" }}>الحالة · Santé</h2>
+
+      {/* Sheet connection status */}
+      <div className="rounded-xl p-4 border" style={{
+        background: sheetStatus === "ok" ? "rgba(16, 185, 129, 0.05)" : sheetStatus === "fail" ? "rgba(239, 68, 68, 0.05)" : "rgba(245, 158, 11, 0.05)",
+        borderColor: sheetStatus === "ok" ? "rgba(16, 185, 129, 0.2)" : sheetStatus === "fail" ? "rgba(239, 68, 68, 0.2)" : "rgba(245, 158, 11, 0.2)",
+      }}>
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-2xl">{sheetStatus === "ok" ? "✅" : sheetStatus === "fail" ? "❌" : "⏳"}</span>
+          <span className="font-bold" style={{ fontFamily: "var(--font-arabic)" }}>
+            Google Sheet: {sheetStatus === "ok" ? "متصل" : sheetStatus === "fail" ? "غير متصل" : "جارٍ الفحص..."}
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground break-all" dir="ltr">{sheetMessage || "Checking..."}</p>
+      </div>
+
+      {/* Offline queue */}
+      <div className="rounded-xl p-4 border" style={{ background: "rgba(139, 21, 56, 0.03)", borderColor: "rgba(139, 21, 56, 0.1)" }}>
+        <div className="flex items-center justify-between mb-2">
+          <span className="font-bold" style={{ fontFamily: "var(--font-arabic)" }}>طلبات في الانتظار</span>
+          <span className="text-lg font-bold" style={{ color: offlineCount > 0 ? "#f59e0b" : "#10b981" }}>{offlineCount}</span>
+        </div>
+        <p className="text-xs text-muted-foreground" style={{ fontFamily: "var(--font-arabic)" }}>
+          طلبات فشل إرسالها وتنتظر إعادة المحاولة تلقائياً عند عودة الاتصال.
+        </p>
+        {offlineOrders.length > 0 && (
+          <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
+            {offlineOrders.map((o, i) => (
+              <div key={i} className="text-xs p-2 rounded bg-white/50 border border-burgundy/10">
+                <div className="font-bold">{String(o.fullName || "")} — {String(o.phone || "")}</div>
+                <div className="text-muted-foreground">{String(o.wilayaName || "")} / {String(o.communeName || "")}</div>
+                <div className="text-muted-foreground">Qty: {String(o.quantity)} · Total: {String(o.total)} DA</div>
+                <div className="text-[10px] text-muted-foreground/70" dir="ltr">{String(o.timestamp || "")}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Sheet URL (for verification) */}
+      <div className="rounded-xl p-3 bg-gray-50 border border-gray-200">
+        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Sheet URL</p>
+        <p className="text-xs text-muted-foreground break-all" dir="ltr">{SHEET_URL || "(not set)"}</p>
+      </div>
+
+      {/* Help */}
+      <div className="rounded-xl p-3 bg-amber-50 border border-amber-200">
+        <p className="text-xs" style={{ fontFamily: "var(--font-arabic)" }}>
+          💡 إذا كانت الحالة "غير متصل":
+          <br />1. تأكدي من نشر Apps Script كـ Web app
+          <br />2. تأكدي من ضبط Access على "Anyone"
+          <br />3. أعدي النشر بالكود الجديد من download/google-apps-script.gs
+        </p>
       </div>
     </div>
   );

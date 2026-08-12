@@ -120,6 +120,20 @@ export function Storefront() {
     return () => window.removeEventListener("online", handleOnline);
   }, []);
 
+  // --- bfcache restore: if user navigates back to success page, stay on landing ---
+  // Prevents accidental re-submit when user hits browser back after ordering
+  useEffect(() => {
+    const handlePageshow = (e: PageTransitionEvent) => {
+      if (e.persisted && view === "success") {
+        // bfcache restore — go back to landing to prevent re-submit
+        setView("landing");
+        setOrder(null);
+      }
+    };
+    window.addEventListener("pageshow", handlePageshow);
+    return () => window.removeEventListener("pageshow", handlePageshow);
+  }, [view]);
+
   if (view === "success" && order) {
     return (
       <SuccessCard

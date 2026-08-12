@@ -25,6 +25,7 @@ import { DELIVERY_OPTIONS, type DeliveryId } from "@/config/product";
 import { tierSubtotal, deliveryFee } from "@/config/pricing";
 import { findWilaya } from "@/lib/wilayas";
 import { findCommune } from "@/lib/communes";
+import { sanitizeName, sanitizeNotes, normalizePhone, sanitizeQuantity } from "@/lib/sanitize";
 import type { OrderInput } from "@/lib/types";
 
 /** Google Sheets URL (exposed to client — same as stock checking URL). */
@@ -281,7 +282,20 @@ export async function flushOfflineQueue(): Promise<number> {
  * 7. Return result or throw OrderError with classification
  */
 export async function createOrder(input: OrderInput): Promise<CreateOrderResult> {
-  // --- Validation ---
+  // --- Sanitize + validate all inputs (XSS, format, length) ---
+  const fullName = sanitizeName(input.fullName);
+  if (fullName.length < 3) {
+    throw new OrderError("VALIDATION", "Name too short (min 3 chars)");
+  }
+
+  const phone = normalizePhone(input.phone);
+  if (!phone) {
+    throw new OrderError("VALIDATION", "Invalid phone (Algerian format: 05/06/07 + 8 digits)");
+  }
+
+  const quantity = sanitizeQuantity(input.quantity);
+  const notes = sanitizeNotes(input.notes || "");
+
   const wilaya = findWilaya(input.wilayaId);
   if (!wilaya) {
     throw new OrderError("VALIDATION", "Wilaya not found");
@@ -298,9 +312,9 @@ export async function createOrder(input: OrderInput): Promise<CreateOrderResult>
   const delivery: DeliveryId =
     DELIVERY_OPTIONS.find((o) => o.id === input.delivery)?.id ?? "home";
 
-  const price = derivePrice(input.quantity, delivery);
+  const price = derivePrice(quantity, delivery);
 
-  const tierExists = PRODUCT.tiers.some((t) => t.quantity === input.quantity);
+  const tierExists = PRODUCT.tiers.some((t) => t.quantity === quantity);
   if (!tierExists) {
     throw new OrderError("VALIDATION", "Invalid quantity tier");
   }
@@ -315,29 +329,30 @@ export async function createOrder(input: OrderInput): Promise<CreateOrderResult>
     throw new OrderError("SERVER", "GOOGLE_SHEET_URL not configured");
   }
 
-  // --- Prepare payload ---
-  const idempotencyKey = generateIdempotencyKey(input);
+  // --- Prepare payload (sanitized) ---
+  const idempotencyKey = generateIdempotencyKey({ ...input, fullName, phone });
   const payload = {
-    fullName: input.fullName.trim(),
-    phone: input.phone.trim(),
+    fullName,
+    phone,
     wilayaName: wilaya.name,
     communeName: commune.name,
-    quantity: input.quantity,
+    quantity,
     total: price.total,
-    notes: input.notes?.trim() || "",
-    idempotencyKey, // sent to sheet for dedup
+    notes,
+    idempotencyKey,
   };
 
-  // --- Retry with exponential backoff ---
+  // --- Retry with exponential backoff + jitter (prevents thundering herd) ---
   const MAX_ATTEMPTS = 3;
-  const BACKOFF_MS = [0, 2000, 5000]; // wait before each attempt
+  const BASE_BACKOFF_MS = [0, 2000, 5000];
 
   let lastError: OrderError | null = null;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    // Wait before retry (no wait on first attempt)
-    if (BACKOFF_MS[attempt] > 0) {
-      await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
+    // Wait before retry with jitter (prevents thundering herd at scale)
+    if (BASE_BACKOFF_MS[attempt] > 0) {
+      const jitter = Math.random() * 1000; // 0-1000ms random jitter
+      await new Promise((r) => setTimeout(r, BASE_BACKOFF_MS[attempt] + jitter));
     }
 
     try {

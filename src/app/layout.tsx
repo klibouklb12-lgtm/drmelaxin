@@ -69,10 +69,26 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
+      <head>
+        {/* Preconnect to external origins for faster first load */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://script.google.com" />
+        <link rel="dns-prefetch" href="https://cdn.jsdelivr.net" />
+      </head>
       <body
         suppressHydrationWarning
         className={`${notoSansArabic.variable} ${cormorant.variable} ${amiri.variable} font-sans antialiased bg-cream text-foreground`}
       >
+        {/* <noscript> fallback — users with JS disabled still see something */}
+        <noscript>
+          <div style={{ padding: "2rem", textAlign: "center", fontFamily: "sans-serif" }}>
+            <h1>Dr.Melaxin</h1>
+            <p>This store requires JavaScript to be enabled for ordering.</p>
+            <p>Please enable JavaScript in your browser settings, or call us directly.</p>
+          </div>
+        </noscript>
+
         <ThemeProvider
           attribute="class"
           defaultTheme="light"
