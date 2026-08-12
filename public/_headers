@@ -1,0 +1,34 @@
+# Cloudflare Pages headers — aggressive caching for max performance
+# https://developers.cloudflare.com/pages/configuration/headers/
+
+# HTML: 7-day cache + 1-day stale-while-revalidate
+# Lets Cloudflare's edge cache serve HTML → near-zero origin bandwidth
+/
+  Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+
+# Static assets (Next.js build output): 1 year immutable
+/_next/static/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Images: 1 year immutable (even if not on CDN)
+/gallery/*
+  Cache-Control: public, max-age=31536000, immutable
+/logo.jpg
+  Cache-Control: public, max-age=31536000, immutable
+/logo.svg
+  Cache-Control: public, max-age=31536000, immutable
+
+# Service Worker: never cache (must always fetch fresh)
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Robots: 1 day
+/robots.txt
+  Cache-Control: public, max-age=86400
+
+# Security headers (best practice)
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()

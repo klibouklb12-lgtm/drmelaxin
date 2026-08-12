@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,12 +14,15 @@ import { PRODUCT, DELIVERY_OPTIONS } from "@/config/product";
 import { tierSubtotal, formatDZD } from "@/config/pricing";
 import { WILAYAS } from "@/lib/wilayas";
 import { communesForWilaya } from "@/lib/communes";
-import { createOrder } from "@/lib/orders";
+import { createOrder, OrderError } from "@/lib/orders";
 import { t } from "@/lib/i18n";
 import type { DeliveryId } from "@/config/product";
 import { useReveal } from "@/hooks/use-reveal";
+import { useOnlineStatus } from "@/hooks/use-online-status";
 
 const ALGERIAN_PHONE = /^(0)(5|6|7)\d{8}$/;
+
+const AUTOSAVE_KEY = "drmelaxin_form_draft";
 
 export function OrderForm({
   onSubmitted,
@@ -36,9 +39,11 @@ export function OrderForm({
   const [quantity, setQuantity] = useState(1);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const isOnline = useOnlineStatus();
+  const submittedRef = useRef(false); // double-submit prevention
 
   const phoneValid = ALGERIAN_PHONE.test(phone.trim());
-  const formValid = !disabled && fullName.trim().length >= 3 && phoneValid && wilayaId !== null && communeId !== null;
+  const formValid = !disabled && fullName.trim().length >= 3 && phoneValid && wilayaId !== null && communeId !== null && isOnline;
 
   const communes = useMemo(() => (wilayaId !== null ? communesForWilaya(wilayaId) : []), [wilayaId]);
 
@@ -47,11 +52,40 @@ export function OrderForm({
 
   const reveal = useReveal<HTMLDivElement>();
 
+  // --- Autosave form draft to localStorage ---
+  useEffect(() => {
+    const draft = { fullName, phone, wilayaId, communeId, quantity, notes, ts: Date.now() };
+    try {
+      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(draft));
+    } catch {}
+  }, [fullName, phone, wilayaId, communeId, quantity, notes]);
+
+  // --- Restore draft on mount (if less than 1 hour old) ---
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(AUTOSAVE_KEY);
+      if (!raw) return;
+      const draft = JSON.parse(raw);
+      if (Date.now() - draft.ts > 60 * 60 * 1000) {
+        localStorage.removeItem(AUTOSAVE_KEY);
+        return;
+      }
+      if (draft.fullName) setFullName(draft.fullName);
+      if (draft.phone) setPhone(draft.phone);
+      if (typeof draft.wilayaId === "number") setWilayaId(draft.wilayaId);
+      if (typeof draft.communeId === "number") setCommuneId(draft.communeId);
+      if (typeof draft.quantity === "number") setQuantity(draft.quantity);
+      if (draft.notes) setNotes(draft.notes);
+    } catch {}
+  }, []);
+
   function handleWilayaChange(id: number) { setWilayaId(id); setCommuneId(null); }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!formValid || submitting) return;
+    // Triple-check: prevent double-submit
+    if (!formValid || submitting || submittedRef.current) return;
+    submittedRef.current = true;
     setSubmitting(true);
     try {
       const order = await createOrder({
@@ -65,11 +99,25 @@ export function OrderForm({
         notes,
       });
       toast.success(t("toast.success"));
+      // Clear autosaved draft on success
+      try { localStorage.removeItem(AUTOSAVE_KEY); } catch {}
       onSubmitted(order);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "";
-      if (msg === "RATE_LIMIT") toast.error(t("toast.rate.limit"));
-      else toast.error(t("toast.error"));
+      // Reset submit flag so user can retry
+      submittedRef.current = false;
+      if (err instanceof OrderError) {
+        if (err.type === "RATE_LIMIT") {
+          toast.error(t("toast.rate.limit"));
+        } else if (err.type === "NETWORK" || err.type === "TIMEOUT") {
+          toast.error("تعذّر الاتصال. سيتم إرسال طلبك تلقائياً عند عودة الاتصال.", { duration: 6000 });
+        } else if (err.type === "VALIDATION") {
+          toast.error("تحققي من البيانات المدخلة");
+        } else {
+          toast.error(t("toast.error"));
+        }
+      } else {
+        toast.error(t("toast.error"));
+      }
     }
     finally { setSubmitting(false); }
   }
@@ -189,11 +237,18 @@ export function OrderForm({
             </div>
           </div>
 
+          {/* Offline notice */}
+          {!isOnline && (
+            <div className="rounded-xl p-3 text-center text-sm" style={{ background: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.2)", color: "#991b1b", fontFamily: "var(--font-arabic)" }}>
+              ⚠️ لا يوجد اتصال بالإنترنت — أكملي البيانات وسنرسل الطلب تلقائياً عند عودة الاتصال
+            </div>
+          )}
+
           {/* Submit */}
-          <Button type="submit" disabled={!formValid || submitting}
+          <Button type="submit" disabled={!formValid || submitting || !isOnline}
             className="btn-elegant w-full h-auto py-4 rounded-2xl font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-            style={{ background: formValid ? "linear-gradient(135deg, var(--burgundy) 0%, var(--burgundy-dark) 100%)" : "var(--muted)", color: "var(--pearl)", border: formValid ? "1px solid var(--gold)" : "1px solid transparent" }}>
-            <span style={{ fontFamily: "var(--font-arabic)", fontSize: "1.1rem" }}>{submitting ? t("form.submit.loading") : t("form.submit")}</span>
+            style={{ background: formValid && isOnline ? "linear-gradient(135deg, var(--burgundy) 0%, var(--burgundy-dark) 100%)" : "var(--muted)", color: "var(--pearl)", border: formValid && isOnline ? "1px solid var(--gold)" : "1px solid transparent" }}>
+            <span style={{ fontFamily: "var(--font-arabic)", fontSize: "1.1rem" }}>{submitting ? t("form.submit.loading") : isOnline ? t("form.submit") : "في انتظار الاتصال…"}</span>
           </Button>
         </form>
       </div>

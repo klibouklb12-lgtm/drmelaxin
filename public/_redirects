@@ -1,0 +1,6 @@
+# Cloudflare Pages redirects
+# https://developers.cloudflare.com/pages/configuration/redirects/
+
+# Static export uses trailingSlash, so /admin → /admin/
+# This redirect ensures clean URLs work
+/admin  /admin/  302

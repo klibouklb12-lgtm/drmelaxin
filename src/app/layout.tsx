@@ -5,6 +5,7 @@ import { Toaster as Sonner } from "sonner";
 import { ThemeProvider } from "next-themes";
 import { BRAND } from "@/config/brand";
 import { PRODUCT } from "@/config/product";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import Script from "next/script";
 
 /**
@@ -78,7 +79,9 @@ export default function RootLayout({
           enableSystem={false}
           disableTransitionOnChange
         >
-          {children}
+          <ErrorBoundary>
+            {children}
+          </ErrorBoundary>
           <Sonner
             position="top-center"
             richColors

@@ -8,6 +8,7 @@ import { PRODUCT } from "@/config/product";
 import { formatDZD } from "@/config/pricing";
 import { t } from "@/lib/i18n";
 import { cdn } from "@/lib/cdn";
+import { flushOfflineQueue } from "@/lib/orders";
 import { useReveal } from "@/hooks/use-reveal";
 
 /**
@@ -35,19 +36,18 @@ export function Storefront() {
   const [lowStock, setLowStock] = useState(false);
   const [outOfStock, setOutOfStock] = useState(false);
 
-  // STOCK CHECKING — immediate detection of 0→>0 and >0→0 changes
-  // 1. Check localStorage cache (7-day TTL)
-  // 2. If cache says stock > 0: TRUST IT. Zero requests. (stock is fine)
-  // 3. If cache says stock = 0 OR no cache: do ONE fresh fetch from Google Sheets
-  //    → If sheet says >0: update cache, enable form (immediate detection of restock)
-  //    → If sheet says =0: disable form, keep checking on each page load
-  // This means: stock=0 → 1 request per page load (to detect restock immediately)
-  //              stock>0 → ZERO requests (cached 7 days)
+  // STOCK CHECKING — resilient, never blocks sales
+  // Strategy:
+  // 1. Check localStorage cache (7-day TTL) — if stock > 0, TRUST IT (zero requests)
+  // 2. If cache says 0 or no cache: ONE fresh fetch with 8s timeout
+  // 3. If fetch fails: default to IN STOCK (don't block orders — better to oversell than lose a sale)
+  // 4. On any error: fail open (enable the form)
   useEffect(() => {
     if (!SHEET_URL) return;
 
     const STOCK_CACHE_KEY = "drmelaxin_stock";
     const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+    const FETCH_TIMEOUT_MS = 8000; // 8 second timeout
 
     const checkStock = () => {
       // Check cache first
@@ -68,37 +68,56 @@ export function Storefront() {
         }
       } catch {}
 
-      // Either no cache, expired cache, or cache says stock=0 → fetch fresh
-      fetch(`${SHEET_URL}?action=stock`)
+      // Fetch with timeout (AbortController)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+      fetch(`${SHEET_URL}?action=stock`, { signal: controller.signal })
         .then(r => r.text())
         .then(text => {
+          clearTimeout(timeoutId);
           if (!text.trim().startsWith("{")) return;
-          const data = JSON.parse(text);
-          if (data.stock !== undefined) {
-            setStock(data.stock);
-            setLowStock(data.lowStock);
-            setOutOfStock(data.outOfStock);
-            // Update cache with fresh data
-            try {
-              localStorage.setItem(STOCK_CACHE_KEY, JSON.stringify({
-                stock: data.stock,
-                lowStock: data.lowStock,
-                outOfStock: data.outOfStock,
-                timestamp: Date.now()
-              }));
-            } catch {}
+          try {
+            const data = JSON.parse(text);
+            if (data.stock !== undefined && typeof data.stock === "number") {
+              setStock(data.stock);
+              setLowStock(data.lowStock);
+              setOutOfStock(data.outOfStock);
+              // Update cache with fresh data
+              try {
+                localStorage.setItem(STOCK_CACHE_KEY, JSON.stringify({
+                  stock: data.stock,
+                  lowStock: data.lowStock,
+                  outOfStock: data.outOfStock,
+                  timestamp: Date.now()
+                }));
+              } catch {}
+            }
+          } catch {
+            // JSON parse failed — fail open (don't block orders)
           }
         })
         .catch(() => {
-          // If fetch fails and cache said zero, keep showing out of stock
-          // If fetch fails and no cache, assume stock is fine (don't block ordering)
+          clearTimeout(timeoutId);
+          // Fetch failed (timeout, network, CORS) — FAIL OPEN:
+          // If cache said zero, keep showing out of stock
+          // If no cache, assume stock is fine (better to sell than block)
+          if (!cacheSaysZero) {
+            setOutOfStock(false);
+            setLowStock(false);
+          }
         });
     };
 
     checkStock();
-    // NO polling. NO setInterval. One check per page load.
-    // Stock >0: cached 7 days → zero requests on repeat visits
-    // Stock =0: fresh fetch every page load → immediate detection of restock
+
+    // Flush any offline-queued orders (from previous offline sessions)
+    flushOfflineQueue().catch(() => {});
+
+    // Also flush when network reconnects
+    const handleOnline = () => { flushOfflineQueue().catch(() => {}); };
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
   }, []);
 
   if (view === "success" && order) {
