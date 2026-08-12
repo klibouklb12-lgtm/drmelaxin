@@ -1,0 +1,696 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================================
+   Dr.Melaxin — Masterpiece design system
+   Palette: deep burgundy + pearl + cream
+   Typography: Cormorant Garamond (Latin display) + Amiri (Arabic display)
+             + Noto Sans Arabic (Arabic body) + Inter (Latin body)
+   ============================================================ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
+  --font-arabic: var(--font-arabic);
+  --font-mono: var(--font-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* ============================================================
+     Dr.Melaxin brand palette — burgundy + pearl + cream
+     ============================================================ */
+  --color-burgundy: var(--burgundy);
+  --color-burgundy-light: var(--burgundy-light);
+  --color-burgundy-dark: var(--burgundy-dark);
+  --color-pearl: var(--pearl);
+  --color-cream: var(--cream);
+  --color-champagne: var(--champagne);
+  --color-gold: var(--gold);
+  --color-gold-light: var(--gold-light);
+  --color-gold-dark: var(--gold-dark);
+}
+
+:root {
+  --radius: 0.625rem;
+
+  /* Brand — pure white interface, burgundy reserved for buttons + product accents */
+  --burgundy: #8b1538;
+  --burgundy-light: #b3254f;
+  --burgundy-dark: #5c0e25;
+  --pearl: #ffffff;
+  --cream: #ffffff;
+  --white-gloss: #ffffff;
+  --white-soft: #fefdfb;
+  --white-shadow: #f7f5f2;
+  --champagne: #e8c97a;
+  --champagne-light: #f0d89a;
+  --champagne-dark: #c9a96e;
+  --gold: #d4af37;
+  --gold-light: #f0d89a;
+  --gold-dark: #9a7a2a;
+  /* Golden-red — warm gradient for the price animation */
+  --golden-red-1: #b8860b;   /* dark golden */
+  --golden-red-2: #d4af37;   /* gold */
+  --golden-red-3: #8b1538;   /* burgundy */
+  --golden-red-4: #c9a96e;   /* champagne */
+
+  /* Tailwind semantic mapping — pure white interface */
+  --background: var(--pearl);
+  --foreground: #2a1f15;
+  --card: var(--white-soft);
+  --card-foreground: #2a1f15;
+  --popover: var(--pearl);
+  --popover-foreground: #2a1f15;
+  --primary: var(--burgundy);
+  --primary-foreground: var(--pearl);
+  --secondary: var(--white-shadow);
+  --secondary-foreground: #2a1f15;
+  --muted: var(--white-shadow);
+  --muted-foreground: #8a7560;
+  --accent: var(--champagne-light);
+  --accent-foreground: #6b4a1a;
+  --destructive: #c53030;
+  --border: rgba(139, 21, 56, 0.1);
+  --input: rgba(139, 21, 56, 0.06);
+  --ring: var(--burgundy);
+  --chart-1: var(--burgundy);
+  --chart-2: var(--champagne);
+  --chart-3: var(--gold);
+  --chart-4: var(--pearl);
+  --chart-5: var(--burgundy-light);
+  --sidebar: var(--pearl);
+  --sidebar-foreground: #2a1f15;
+  --sidebar-primary: var(--burgundy);
+  --sidebar-primary-foreground: var(--pearl);
+  --sidebar-accent: var(--white-shadow);
+  --sidebar-accent-foreground: #2a1f15;
+  --sidebar-border: rgba(139, 21, 56, 0.1);
+  --sidebar-ring: var(--burgundy);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    scroll-behavior: smooth;
+    scroll-padding-top: 24px;
+  }
+  body {
+    @apply text-foreground;
+    font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* Fancy white background — more white, multi-layer gradient */
+    background:
+      radial-gradient(ellipse at 15% 0%, rgba(255, 255, 255, 1) 0%, transparent 45%),
+      radial-gradient(ellipse at 85% 50%, rgba(255, 253, 250, 0.8) 0%, transparent 55%),
+      radial-gradient(ellipse at 50% 100%, rgba(247, 245, 242, 0.5) 0%, transparent 50%),
+      linear-gradient(180deg, #ffffff 0%, #ffffff 60%, #fdfcfa 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+  section[id] { scroll-margin-top: 24px; }
+}
+
+/* ============================================================
+   MASTERPIECE ANIMATIONS
+   ============================================================ */
+
+/* --- Sparkle twinkle (hero sparkles ✧) — premium 3-stage twinkle --- */
+@keyframes sparkle-anim {
+  0%   { opacity: 0.2; transform: scale(0.7) rotate(0deg); }
+  30%  { opacity: 1;   transform: scale(1.3) rotate(45deg); }
+  60%  { opacity: 0.8; transform: scale(1.1) rotate(90deg); }
+  100% { opacity: 0.2; transform: scale(0.7) rotate(180deg); }
+}
+.sparkle-anim { display: inline-block; animation: sparkle-anim 5s cubic-bezier(0.4, 0, 0.2, 1) infinite; will-change: opacity, transform; }
+
+/* --- Gradient sweep on the product badge --- */
+@keyframes badge-shimmer {
+  0%   { background-position: -200% 50%; }
+  100% { background-position: 200% 50%; }
+}
+.badge-shimmer { background-size: 200% 100%; animation: badge-shimmer 8s cubic-bezier(0.4, 0, 0.2, 1) infinite; will-change: background-position; }
+
+/* --- Shimmer text effect (gold gradient sweeping across headings) --- */
+@keyframes shimmer-text {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--burgundy) 0%,
+    var(--gold) 25%,
+    var(--burgundy-light) 50%,
+    var(--gold) 75%,
+    var(--burgundy) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: shimmer-text 5s linear infinite;
+}
+
+/* --- Slow ken-burns for hero image --- */
+@keyframes ken-burns {
+  0%   { transform: scale(1) translateY(0); }
+  100% { transform: scale(1.05) translateY(-1%); }
+}
+.ken-burns { animation: ken-burns 20s ease-in-out infinite alternate; }
+
+/* --- Floating product (gentle vertical drift) --- */
+@keyframes float-soft {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-8px); }
+}
+.float-soft { animation: float-soft 5s ease-in-out infinite; }
+
+/* --- Pearl shimmer (subtle opacity pulse on pearl elements) --- */
+@keyframes pearl-shimmer {
+  0%, 100% { opacity: 0.85; filter: brightness(1); }
+  50%      { opacity: 1;    filter: brightness(1.15); }
+}
+.pearl-shimmer { animation: pearl-shimmer 4s ease-in-out infinite; }
+
+/* --- Spotlight reveal (radial mask expansion for dramatic photo) --- */
+@keyframes spotlight-reveal {
+  0%   { clip-path: circle(0% at 50% 60%); opacity: 0; }
+  100% { clip-path: circle(75% at 50% 60%); opacity: 1; }
+}
+.spotlight-reveal { animation: spotlight-reveal 1.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* --- Diagonal wipe for texture macro (right→left, mimics smear) --- */
+@keyframes diagonal-wipe {
+  0%   { clip-path: polygon(100% 0, 100% 0, 100% 100%, 100% 100%); }
+  100% { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
+}
+.diagonal-wipe { animation: diagonal-wipe 1.2s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both; }
+
+/* --- Letter-by-letter reveal (used for "FIRMING LIFTING" benefit copy) --- */
+@keyframes letter-rise {
+  0%   { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.letter-rise { animation: letter-rise 0.6s ease-out both; }
+
+/* --- Price strikethrough animation (the 5200 → 3800 reveal) --- */
+@keyframes strike-through {
+  0%   { width: 0; }
+  100% { width: 100%; }
+}
+.strike-through::after {
+  content: '';
+  position: absolute;
+  left: 0; top: 50%;
+  height: 2px;
+  background: currentColor;
+  animation: strike-through 0.9s cubic-bezier(0.65, 0, 0.35, 1) 0.4s both;
+}
+
+/* --- Success card entrance --- */
+@keyframes success-animate {
+  0%   { opacity: 0; transform: translateY(20px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0)    scale(1); }
+}
+.success-animate { animation: success-animate 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; will-change: opacity, transform; }
+
+/* --- Checkmark SVG stroke draw --- */
+@keyframes checkmark-animate {
+  0%   { stroke-dashoffset: 32; opacity: 0; }
+  40%  { opacity: 1; }
+  100% { stroke-dashoffset: 0;  opacity: 1; }
+}
+.checkmark-animate {
+  stroke-dasharray: 32;
+  stroke-dashoffset: 32;
+  animation: checkmark-animate 0.7s cubic-bezier(0.65, 0, 0.45, 1) 0.15s both;
+}
+
+/* --- Generic fade-in-up (used by section reveals + IntersectionObserver) --- */
+@keyframes fade-in-up {
+  0%   { opacity: 0; transform: translateY(16px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.fade-in-up { animation: fade-in-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) both; will-change: opacity, transform; }
+
+/* --- Reveal-on-scroll (initially hidden, IntersectionObserver adds .is-visible) --- */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.reveal-delay-1 { transition-delay: 0.12s; }
+.reveal-delay-2 { transition-delay: 0.24s; }
+.reveal-delay-3 { transition-delay: 0.36s; }
+.reveal-delay-4 { transition-delay: 0.48s; }
+
+/* --- Marquee for benefit strip (Anti-ridules · Fermeté · …) --- */
+@keyframes marquee {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee 30s linear infinite;
+}
+[dir="rtl"] .marquee-track {
+  animation-direction: reverse;
+}
+
+/* --- Pulse for the CTA button (very subtle, slow, CPU-friendly) --- */
+@keyframes pulse-soft {
+  0%, 100% { box-shadow: 0 8px 24px -10px rgba(139, 21, 56, 0.35); }
+  50%      { box-shadow: 0 12px 30px -8px  rgba(139, 21, 56, 0.55); }
+}
+.pulse-soft { animation: pulse-soft 6s cubic-bezier(0.4, 0, 0.2, 1) infinite; will-change: box-shadow; }
+
+/* --- Carousel crossfade (slow, elegant) --- */
+@keyframes carousel-fade-in {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+.carousel-fade-in { animation: carousel-fade-in 2s cubic-bezier(0.4, 0, 0.2, 1) both; will-change: opacity; }
+
+/* --- Carousel progress bar (subtle sweep) --- */
+@keyframes carousel-progress {
+  0%   { width: 0%; }
+  100% { width: 100%; }
+}
+.carousel-progress { animation: carousel-progress 8s linear forwards; will-change: width; }
+
+/* --- Price: simple elegant fade-in --- */
+@keyframes price-fade-in {
+  0%   { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.price-fade-in { animation: price-fade-in 1s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both; will-change: opacity, transform; }
+
+/* --- Golden-red price shimmer (warm, slow, elegant) — MORE ANIMATED --- */
+@keyframes golden-red-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.golden-red-price {
+  background: linear-gradient(
+    90deg,
+    #b8860b 0%,
+    #ffd700 20%,
+    #fff8dc 35%,
+    #d4af37 50%,
+    #fff8dc 65%,
+    #ffd700 80%,
+    #b8860b 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: golden-red-shimmer 6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: background-position;
+}
+
+/* --- Cherry-style price (legacy, kept for non-pill contexts) --- */
+@keyframes cherry-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.cherry-price {
+  background: linear-gradient(
+    90deg,
+    var(--burgundy) 0%,
+    var(--burgundy-light) 25%,
+    var(--burgundy) 50%,
+    var(--burgundy-light) 75%,
+    var(--burgundy) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: cherry-shimmer 8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: background-position;
+}
+
+/* --- Elegant price reveal (one-time, slower) --- */
+@keyframes price-reveal {
+  0%   { opacity: 0; transform: scale(0.88) translateY(10px); }
+  60%  { opacity: 1; transform: scale(1.03) translateY(-1px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.price-reveal { animation: price-reveal 1.4s cubic-bezier(0.34, 1.4, 0.64, 1) 0.4s both; will-change: opacity, transform; }
+
+/* --- Price glow halo (subtle, slow, CPU-friendly) --- */
+@keyframes price-glow {
+  0%, 100% { filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.4)); }
+  50%      { filter: drop-shadow(0 0 16px rgba(255, 215, 0, 0.7)); }
+}
+.price-glow { animation: price-glow 4s cubic-bezier(0.4, 0, 0.2, 1) infinite; will-change: filter; }
+
+/* --- Strike-through for old price (one-time, elegant) --- */
+@keyframes strike-through {
+  0%   { width: 0; }
+  100% { width: 100%; }
+}
+.strike-through::after {
+  content: '';
+  position: absolute;
+  left: 0; top: 50%;
+  height: 2px;
+  background: currentColor;
+  animation: strike-through 1s cubic-bezier(0.65, 0, 0.35, 1) 0.6s both;
+}
+
+/* --- Glossy white reflective sheen (slow, CPU-friendly) --- */
+@keyframes gloss-sheen {
+  0%   { transform: translateX(-100%) skewX(-15deg); }
+  100% { transform: translateX(200%)  skewX(-15deg); }
+}
+.gloss-sheen {
+  position: relative;
+  overflow: hidden;
+}
+.gloss-sheen::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 50%; height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.3) 50%,
+    transparent 100%
+  );
+  animation: gloss-sheen 12s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  pointer-events: none;
+  z-index: 1;
+  will-change: transform;
+}
+
+/* --- Photo frame: solid white frame (more solid, stronger shadow) --- */
+.white-frame-static {
+  border: 4px solid rgba(255, 255, 255, 1);
+  box-shadow:
+    0 20px 50px -10px rgba(139, 21, 56, 0.15),
+    0 0 0 1px rgba(255, 255, 255, 1),
+    0 0 0 2px rgba(139, 21, 56, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+}
+
+/* --- Elegant button hover lift (smooth) --- */
+.btn-elegant {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.btn-elegant:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px -6px rgba(139, 21, 56, 0.4);
+}
+.btn-elegant:active {
+  transform: translateY(0);
+  box-shadow: 0 4px 12px -4px rgba(139, 21, 56, 0.3);
+}
+
+/* --- Selected state: subtle gold glow (slow) --- */
+@keyframes selected-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(139, 21, 56, 0); }
+  50%      { box-shadow: 0 0 0 4px rgba(139, 21, 56, 0.1); }
+}
+.selected-glow { animation: selected-glow 5s cubic-bezier(0.4, 0, 0.2, 1) infinite; will-change: box-shadow; }
+
+/* --- Logo: subtle elegant glow (almost invisible surrounding colors) --- */
+@keyframes logo-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 0px rgba(139, 21, 56, 0));
+    transform: scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 8px rgba(139, 21, 56, 0.12));
+    transform: scale(1.01);
+  }
+}
+.logo-glow {
+  animation: logo-glow 5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: filter, transform;
+}
+
+/* --- Logo frame: animated green/blue glow matching the ParaPharma logo colors --- */
+@keyframes logo-frame-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(16, 185, 129, 0.15),
+      0 0 20px 0px rgba(16, 185, 129, 0.05),
+      0 0 0 0 rgba(59, 130, 246, 0);
+  }
+  33% {
+    box-shadow:
+      0 0 0 1px rgba(16, 185, 129, 0.25),
+      0 0 25px 5px rgba(16, 185, 129, 0.12),
+      0 0 0 0 rgba(59, 130, 246, 0.05);
+  }
+  66% {
+    box-shadow:
+      0 0 0 1px rgba(59, 130, 246, 0.25),
+      0 0 25px 5px rgba(59, 130, 246, 0.12),
+      0 0 0 0 rgba(16, 185, 129, 0.05);
+  }
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(16, 185, 129, 0.15),
+      0 0 20px 0px rgba(16, 185, 129, 0.05),
+      0 0 0 0 rgba(59, 130, 246, 0);
+  }
+}
+.logo-frame {
+  animation: logo-frame-glow 6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: box-shadow;
+}
+
+/* --- FREE SHIPPING banner: elegant glowing badge --- */
+@keyframes free-ship-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0), 0 4px 12px -2px rgba(16, 185, 129, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 20px 4px rgba(16, 185, 129, 0.15), 0 6px 18px -2px rgba(16, 185, 129, 0.35);
+  }
+}
+.free-ship-glow {
+  animation: free-ship-glow 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: box-shadow;
+}
+
+/* --- FREE SHIPPING banner (big, below price): more prominent --- */
+@keyframes free-ship-big-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0), 0 6px 16px -3px rgba(16, 185, 129, 0.25);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 30px 6px rgba(16, 185, 129, 0.2), 0 8px 24px -3px rgba(16, 185, 129, 0.4);
+    transform: scale(1.005);
+  }
+}
+.free-ship-big {
+  animation: free-ship-big-glow 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: box-shadow, transform;
+}
+
+/* --- FREE text in calc section: elegant gold glow --- */
+@keyframes free-text-glow {
+  0%, 100% {
+    text-shadow: 0 0 0px rgba(212, 175, 55, 0);
+  }
+  50% {
+    text-shadow: 0 0 10px rgba(212, 175, 55, 0.4);
+  }
+}
+.free-text-glow {
+  animation: free-text-glow 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: text-shadow;
+}
+
+/* --- Pill-shaped price button (burgundy, like the screenshot reference) --- */
+.pill-price-glow {
+  background: linear-gradient(
+    135deg,
+    var(--burgundy) 0%,
+    var(--burgundy-light) 50%,
+    var(--burgundy) 100%
+  );
+  color: var(--pearl);
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow:
+    0 8px 24px -6px rgba(139, 21, 56, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* --- Fancy price text: subtle white shimmer sweep (a bit fancy, not too much) --- */
+@keyframes fancy-shimmer {
+  0%   { background-position: -150% center; }
+  100% { background-position: 250% center; }
+}
+.fancy-price-text {
+  background: linear-gradient(
+    90deg,
+    var(--pearl) 0%,
+    var(--pearl) 40%,
+    #fff8dc 50%,
+    var(--pearl) 60%,
+    var(--pearl) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: fancy-shimmer 6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  will-change: background-position;
+}
+
+/* --- Round price box: elegant, glossy white, burgundy border --- */
+.round-price-box {
+  background: linear-gradient(
+    135deg,
+    var(--pearl) 0%,
+    var(--white-soft) 50%,
+    var(--white-shadow) 100%
+  );
+  border: 2px solid var(--burgundy);
+  box-shadow:
+    0 12px 32px -8px rgba(139, 21, 56, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -1px 0 rgba(139, 21, 56, 0.05);
+}
+
+/* --- Pill-shaped price button (like the screenshot reference) --- */
+.pill-price {
+  background: linear-gradient(
+    135deg,
+    var(--burgundy) 0%,
+    var(--burgundy-light) 50%,
+    var(--burgundy) 100%
+  );
+  color: var(--pearl);
+  border-radius: 9999px;
+  box-shadow:
+    0 8px 24px -6px rgba(139, 21, 56, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+/* --- Transparent text frame (for description/benefits sections) --- */
+.text-frame {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(139, 21, 56, 0.08);
+  border-radius: 1.25rem;
+  box-shadow: 0 4px 16px -6px rgba(139, 21, 56, 0.06);
+}
+
+/* --- Scroll cue bounce (subtle) --- */
+@keyframes scroll-cue {
+  0%, 100% { transform: translateY(0); opacity: 0.6; }
+  50%      { transform: translateY(6px); opacity: 1; }
+}
+.scroll-cue { animation: scroll-cue 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite; will-change: transform, opacity; }
+
+/* --- Image blur-up loading (elegant, premium) --- */
+@keyframes image-blur-up {
+  0%   { opacity: 0; filter: blur(12px); transform: scale(1.03); }
+  100% { opacity: 1; filter: blur(0);    transform: scale(1); }
+}
+.image-blur-up {
+  animation: image-blur-up 0.8s cubic-bezier(0.4, 0, 0.2, 1) both;
+  will-change: opacity, filter, transform;
+}
+
+/* --- Carousel image transition (smooth crossfade with subtle scale) --- */
+@keyframes carousel-image-in {
+  0%   { opacity: 0; transform: scale(1.04); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.carousel-image-in {
+  animation: carousel-image-in 1.2s cubic-bezier(0.4, 0, 0.2, 1) both;
+  will-change: opacity, transform;
+}
+
+/* --- Custom scrollbar (elegant gold) --- */
+.scroll-area-melaxin[data-radix-scroll-area-viewport] {
+  scrollbar-width: thin;
+  scrollbar-color: var(--gold-light) transparent;
+}
+.scroll-area-melaxin[data-radix-scroll-area-viewport]::-webkit-scrollbar { width: 6px; }
+.scroll-area-melaxin[data-radix-scroll-area-viewport]::-webkit-scrollbar-thumb {
+  background: var(--gold-light); border-radius: 3px;
+}
+.scroll-area-melaxin[data-radix-scroll-area-viewport]::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* --- Thin scrollbar for thumbnail strips --- */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--gold-light) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar { height: 3px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: var(--gold-light); border-radius: 3px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+
+/* --- Reduced motion — respect user preference (bullet-proof) --- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* All reveal elements appear immediately — no opacity gate */
+  .reveal { opacity: 1 !important; transform: none !important; }
+}

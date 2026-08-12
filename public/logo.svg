@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c9a96e"/>
+      <stop offset="100%" stop-color="#8c6a3a"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f3e6d4"/>
+      <stop offset="100%" stop-color="#e6d2a8"/>
+    </linearGradient>
+  </defs>
+  <!-- Outer ring -->
+  <circle cx="50" cy="50" r="46" fill="url(#g2)" stroke="url(#g1)" stroke-width="2"/>
+  <!-- Decorative dropper bottle silhouette (skincare) -->
+  <g transform="translate(50,50)">
+    <!-- Cap -->
+    <rect x="-6" y="-30" width="12" height="8" rx="1.5" fill="url(#g1)"/>
+    <!-- Neck -->
+    <rect x="-3" y="-22" width="6" height="3" fill="#8c6a3a"/>
+    <!-- Body -->
+    <path d="M -10 -19 Q -10 -22 -7 -22 L 7 -22 Q 10 -22 10 -19 L 10 22 Q 10 25 7 25 L -7 25 Q -10 25 -10 22 Z" fill="url(#g1)" opacity="0.95"/>
+    <!-- Inner highlight -->
+    <rect x="-7" y="-15" width="3" height="35" rx="1.5" fill="#fff" opacity="0.25"/>
+    <!-- Letter A -->
+    <text x="0" y="8" font-family="Georgia, serif" font-size="20" font-weight="700" fill="#fff" text-anchor="middle">A</text>
+  </g>
+</svg>

@@ -1,0 +1,66 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NPM_FLAGS = "--legacy-peer-deps"
+
+# Next.js plugin is auto-detected by Netlify when it sees next.config.ts
+# No need to manually add @netlify/plugin-nextjs — it's automatic.
+
+# ============================================================================
+#  ENVIRONMENT VARIABLES — Set these in Netlify dashboard:
+#  Site Settings → Environment Variables → Add each:
+#
+#  Required:
+#    NEXT_PUBLIC_GOOGLE_SHEET_URL = https://script.google.com/macros/s/AKfyc.../exec
+#      (your Google Apps Script web app URL — for orders + stock checking)
+#
+#  Optional (for free unlimited image bandwidth via jsDelivr CDN):
+#    NEXT_PUBLIC_CDN_BASE = https://cdn.jsdelivr.net/gh/YOUR_USER/YOUR_REPO@main
+#      (push repo to PUBLIC GitHub first, then set this)
+#
+#  Server-only (optional, hides Sheet URL from browser if you want):
+#    GOOGLE_SHEET_URL = https://script.google.com/macros/s/AKfyc.../exec
+#      (same URL, but server-only — not exposed to client)
+# ============================================================================
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+# --- Aggressive caching headers (reduce bandwidth) ---
+
+[[headers]]
+  for = "/gallery/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/logo.jpg"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/logo.svg"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/_next/static/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# HTML: 7-day cache + 1-day stale-while-revalidate
+# Lets browsers + CDNs serve cached HTML → near-zero origin bandwidth
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "public, max-age=604800, stale-while-revalidate=86400"
