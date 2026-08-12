@@ -152,20 +152,49 @@ async function postOrderOnce(
     15000 // 15 second timeout
   );
 
+  // Handle non-OK responses with better classification
   if (!response.ok) {
+    if (response.status === 405) {
+      // 405 = Apps Script deployment is broken/wrong URL
+      throw new OrderError(
+        "SERVER",
+        "Google Apps Script not accepting POST. Check deployment: Execute as Me, Access Anyone."
+      );
+    }
+    if (response.status === 403 || response.status === 401) {
+      throw new OrderError("SERVER", "Google Apps Script access denied. Check deployment access.");
+    }
+    if (response.status >= 500) {
+      throw new OrderError("SERVER", `Google Sheets server error ${response.status}`);
+    }
     throw new OrderError("SERVER", `Google Sheets responded ${response.status}`);
   }
 
   const text = await response.text();
-  let data: { success?: boolean; order?: { id?: string; orderNo?: string; total?: number } };
+
+  // Handle empty response
+  if (!text || text.trim().length === 0) {
+    throw new OrderError("SERVER", "Empty response from Google Sheets");
+  }
+
+  // Handle HTML response (means Apps Script returned an error page, not JSON)
+  if (text.trim().startsWith("<") || text.includes("<!DOCTYPE")) {
+    throw new OrderError(
+      "SERVER",
+      "Google Apps Script returned HTML (not JSON). Deployment may be broken."
+    );
+  }
+
+  let data: { success?: boolean; order?: { id?: string; orderNo?: string; total?: number }; error?: string };
   try {
     data = JSON.parse(text);
   } catch {
-    throw new OrderError("SERVER", "Invalid response from Google Sheets");
+    throw new OrderError("SERVER", "Invalid JSON response from Google Sheets");
   }
 
   if (!data.success || !data.order) {
-    throw new OrderError("SERVER", "Google Sheets rejected order");
+    const errMsg = data.error || "Google Sheets rejected order";
+    throw new OrderError("SERVER", errMsg);
   }
 
   return {
