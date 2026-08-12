@@ -1,26 +1,31 @@
 /**
  * ============================================================================
- *  Dr.Melaxin — Apps Script v2 (BULLETPROOF)
+ *  Dr.Melaxin — Apps Script v3 (Beautiful + Bulletproof)
  * ============================================================================
- *  Tabs: Product, Orders, Stock, Statistics
  *
- *  IMPROVEMENTS OVER v1:
- *  - Idempotency: duplicate POSTs (same idempotencyKey) return the original order
- *  - Better error handling: every function wrapped in try/catch
- *  - CORS-friendly: handles OPTIONS preflight + returns proper JSON
- *  - Input validation: validates all order fields before writing
+ *  TABS:
+ *  1. Dashboard  — Arabic statistics (KPIs, status breakdown, top wilayas, recent orders)
+ *  2. Orders     — English headers, colored status dropdown
+ *  3. Stock      — Simple, elegant (Product | Stock)
+ *  4. Product    — Product settings
+ *
+ *  FEATURES:
+ *  - Colored status: New (blue) → Confirmed (green) → Shipped (gold) → Delivered (dark green) → Cancelled (red)
+ *  - Idempotency: duplicate POSTs return original order (no double-charging)
+ *  - LockService: prevents race conditions during concurrent writes
+ *  - Input validation: name, phone, quantity, total
  *  - Stock validation: rejects orders if out of stock
- *  - Atomic operations: lock sheet during writes to prevent race conditions
- *  - Better order numbers: timestamp-based (no collision risk)
- *  - Failsafe: if Statistics sheet missing, still works
+ *  - Auto-dashboard refresh: statistics update on every order
+ *  - Failsafe: every function wrapped in try/catch, never crashes
+ *  - Trigger-ready: onEditTrigger handles stock auto-reduction
  *
- *  SETUP (follow exactly):
+ *  SETUP (5 minutes):
  *  1. Create EMPTY Google Sheet (don't import anything)
  *  2. Extensions → Apps Script → delete everything → paste this code
  *  3. Click "Run" → select "setup" → authorize
- *  4. Setup trigger MANUALLY (see TRIGGER SETUP below)
+ *  4. Set up trigger MANUALLY (see TRIGGER SETUP below)
  *  5. Deploy → New deployment → Web app
- *  6. Execute as: Me | Access: Anyone (IMPORTANT!)
+ *  6. Execute as: Me | Access: Anyone  ← CRITICAL!
  *  7. Copy URL → Cloudflare env: NEXT_PUBLIC_GOOGLE_SHEET_URL=your_url
  *
  *  TRIGGER SETUP (do this once, manually):
@@ -30,30 +35,52 @@
  *  4. Event source: From spreadsheet
  *  5. Event type: On edit
  *  6. Save → authorize
+ *  This makes stock auto-reduce when you mark an order "Confirmed"
  * ============================================================================
  */
 
+// ============================================================================
+//  CONFIG
+// ============================================================================
+
 var PRODUCT_DEFAULTS = {
-  brandName: "Dr.Melaxin", lineName: "Cemenrete CX",
+  brandName: "Dr.Melaxin",
+  lineName: "Cemenrete CX",
   subtitle: "Calcium Volume Multi Balm",
-  basePrice: 3900, oldPrice: 5800,
+  basePrice: 3900,
+  oldPrice: 5800,
   taglineArabic: "✨ ستيك للعناية بالتجاعيد لبشرة أكثر نعومة وتماسكاً.",
   descriptionArabic: "تساعد تركيبته على تقليل مظهر التجاعيد والخطوط الدقيقة، مع ترطيب البشرة ومنحها مظهراً أكثر إشراقاً ونعومة.",
   benefitsArabic: "مضاد للتجاعيد • تماسك • ترطيب • إشراقة",
   taglineFrench: "✨ Le stick anti-ridules pour une peau visiblement plus lisse et plus ferme.",
   descriptionFrench: "Sa formule aide à réduire l'apparence des rides et ridules, tout en apportant hydratation, confort et éclat à la peau.",
   benefitsFrench: "Anti-ridules • Fermeté • Hydratation • Éclat",
-  badgeArabic: "مضاد للتجاعيد", freeShipping: true
+  badgeArabic: "مضاد للتجاعيد",
+  freeShipping: true
 };
 
 var STATUS_OPTIONS = ["New", "Confirmed", "Shipped", "Delivered", "Cancelled"];
 var STATUS_COLORS = {
-  "New": "#3080FF",
-  "Confirmed": "#016630",
-  "Shipped": "#FFD700",
-  "Delivered": "#2F7D5B",
-  "Cancelled": "#E40014"
+  "New": "#3080FF",       // Blue
+  "Confirmed": "#016630",  // Green
+  "Shipped": "#FFD700",    // Gold
+  "Delivered": "#2F7D5B",  // Dark Green
+  "Cancelled": "#E40014"   // Red
 };
+var STATUS_TEXT_COLORS = {
+  "New": "#FFFFFF",
+  "Confirmed": "#FFFFFF",
+  "Shipped": "#1C1815",    // Dark text on gold
+  "Delivered": "#FFFFFF",
+  "Cancelled": "#FFFFFF"
+};
+
+// Brand colors
+var COLOR_BURGUNDY = "#8b1538";
+var COLOR_GOLD = "#d4af37";
+var COLOR_CREAM = "#f7f5f2";
+var COLOR_DARK = "#2A2520";
+var COLOR_MUTED = "#6B6358";
 
 // ============================================================================
 //  WEB APP ENTRY POINTS
@@ -74,7 +101,6 @@ function doGet(e) {
 
 function doPost(e) {
   try {
-    // Validate request has body
     if (!e || !e.postData || !e.postData.contents) {
       return out({ success: false, error: "No post data" });
     }
@@ -86,7 +112,6 @@ function doPost(e) {
       return out({ success: false, error: "Invalid JSON: " + parseErr.toString() });
     }
 
-    // Route by action
     if (data.action === "updateProduct") return out(updateProduct(data.product));
     if (data.action === "updateStock") return out(updateStock(data.stock));
     return out(addOrder(data));
@@ -96,40 +121,114 @@ function doPost(e) {
 }
 
 // ============================================================================
-//  SETUP — creates all 4 tabs
+//  SETUP — creates all 4 tabs with beautiful formatting
 // ============================================================================
 
 function setup() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
-  // PRODUCT
+  // Remove default sheet if empty
+  try {
+    var defaultSheet = ss.getSheets()[0];
+    if (defaultSheet && defaultSheet.getName() === "Sheet1" && defaultSheet.getLastRow() === 0) {
+      ss.deleteSheet(defaultSheet);
+    }
+  } catch (e) {}
+
+  createProductTab(ss);
+  createOrdersTab(ss);
+  createStockTab(ss);
+  createDashboardTab(ss);
+
+  // Reorder tabs: Dashboard, Orders, Stock, Product
+  var dashboard = ss.getSheetByName("Dashboard");
+  var orders = ss.getSheetByName("Orders");
+  var stock = ss.getSheetByName("Stock");
+  var product = ss.getSheetByName("Product");
+
+  ss.setActiveSheet(dashboard); ss.moveActiveSheet(1);
+  ss.setActiveSheet(orders); ss.moveActiveSheet(2);
+  ss.setActiveSheet(stock); ss.moveActiveSheet(3);
+  ss.setActiveSheet(product); ss.moveActiveSheet(4);
+
+  // Set Dashboard as active
+  ss.setActiveSheet(dashboard);
+
+  Logger.log("✅ Setup complete! 4 tabs created:");
+  Logger.log("   1. Dashboard  — Arabic statistics");
+  Logger.log("   2. Orders     — English headers, colored status");
+  Logger.log("   3. Stock      — Simple stock management");
+  Logger.log("   4. Product    — Product settings");
+  Logger.log("");
+  Logger.log("📋 NEXT STEPS:");
+  Logger.log("   1. Set up trigger: clock icon → onEditTrigger → On edit");
+  Logger.log("   2. Deploy → New deployment → Web app");
+  Logger.log("   3. Execute as: Me | Access: Anyone");
+  Logger.log("   4. Copy URL → Cloudflare env var");
+}
+
+// ============================================================================
+//  PRODUCT TAB
+// ============================================================================
+
+function createProductTab(ss) {
   var p = ss.getSheetByName("Product");
   if (!p) {
     p = ss.insertSheet("Product");
-    p.getRange(1, 1).setValue("Setting");
-    p.getRange(1, 2).setValue("Value");
-    fmtHeader(p, 2);
-    var keys = Object.keys(PRODUCT_DEFAULTS);
-    for (var i = 0; i < keys.length; i++) {
-      p.getRange(i + 2, 1).setValue(keys[i]);
-      p.getRange(i + 2, 2).setValue(PRODUCT_DEFAULTS[keys[i]]);
-    }
-    p.setColumnWidth(1, 180);
-    p.setColumnWidth(2, 350);
-    p.setFrozenRows(1);
+  }
+  p.clear();
+
+  // Headers
+  p.getRange(1, 1).setValue("Setting");
+  p.getRange(1, 2).setValue("Value");
+  fmtHeaderRow(p, 1, 2, COLOR_DARK);
+
+  // Default values
+  var keys = Object.keys(PRODUCT_DEFAULTS);
+  for (var i = 0; i < keys.length; i++) {
+    p.getRange(i + 2, 1).setValue(keys[i]);
+    p.getRange(i + 2, 2).setValue(PRODUCT_DEFAULTS[keys[i]]);
   }
 
-  // ORDERS
+  // Formatting
+  p.setColumnWidth(1, 200);
+  p.setColumnWidth(2, 400);
+  p.setFrozenRows(1);
+
+  // Style data rows
+  var dataRange = p.getRange(2, 1, keys.length, 2);
+  dataRange.setBackground(COLOR_CREAM);
+  dataRange.setFontSize(11);
+  p.getRange(2, 1, keys.length, 1).setFontWeight("bold");
+  p.getRange(2, 1, keys.length, 1).setFontColor(COLOR_BURGUNDY);
+}
+
+// ============================================================================
+//  ORDERS TAB
+// ============================================================================
+
+function createOrdersTab(ss) {
   var o = ss.getSheetByName("Orders");
   if (!o) {
     o = ss.insertSheet("Orders");
-    var headers = ["Date", "Order No", "Status", "Customer", "Phone", "Wilaya", "Commune", "Qty", "Total (DA)", "Notes", "Idempotency Key"];
-    o.getRange(1, 1, 1, headers.length).setValues([headers]);
-    fmtHeader(o, headers.length);
-    o.setFrozenRows(1);
-    o.setAutoFilter("A1:K1");
   }
-  // Always reapply dropdown + colors for Status (column C = 3)
+  o.clear();
+
+  // Headers (English)
+  var headers = ["Date", "Order No", "Status", "Customer", "Phone", "Wilaya", "Commune", "Qty", "Total (DA)", "Notes", "Idempotency Key"];
+  o.getRange(1, 1, 1, headers.length).setValues([headers]);
+  fmtHeaderRow(o, 1, headers.length, COLOR_DARK);
+
+  // Column widths
+  var widths = [120, 150, 110, 180, 130, 120, 120, 60, 100, 200, 180];
+  for (var i = 0; i < widths.length; i++) {
+    o.setColumnWidth(i + 1, widths[i]);
+  }
+
+  o.setFrozenRows(1);
+  o.setAutoFilter("A1:K1");
+
+  // Status dropdown (column C = 3)
   var statusRange = o.getRange(2, 3, 5000, 1);
   statusRange.setDataValidation(
     SpreadsheetApp.newDataValidation()
@@ -137,87 +236,261 @@ function setup() {
       .setAllowInvalid(false)
       .build()
   );
+
+  // Conditional formatting for Status column
   var rules = [];
   for (var s = 0; s < STATUS_OPTIONS.length; s++) {
     var st = STATUS_OPTIONS[s];
-    var fontColor = (st === "Shipped") ? "#1C1815" : "#FFFFFF";
     rules.push(
       SpreadsheetApp.newConditionalFormatRule()
         .whenTextEqualTo(st)
         .setBackground(STATUS_COLORS[st])
-        .setFontColor(fontColor)
+        .setFontColor(STATUS_TEXT_COLORS[st])
         .setRanges([statusRange])
         .build()
     );
   }
   o.setConditionalFormatRules(rules);
 
-  // STOCK
+  // Default "New" status for empty rows
+  o.getRange(2, 3, 100, 1).setValue("New").setFontColor("#999999");
+}
+
+// ============================================================================
+//  STOCK TAB
+// ============================================================================
+
+function createStockTab(ss) {
   var stk = ss.getSheetByName("Stock");
   if (!stk) {
     stk = ss.insertSheet("Stock");
-    stk.getRange(1, 1).setValue("Product");
-    stk.getRange(1, 2).setValue("Stock");
-    fmtHeader(stk, 2);
-    stk.getRange(2, 1).setValue("Cemenrete CX");
-    stk.getRange(2, 2).setValue(100);
-    stk.setColumnWidth(1, 150);
-    stk.setColumnWidth(2, 80);
-    stk.getRange("D1").setValue("Stock Management").setFontWeight("bold").setFontSize(12).setFontColor("#8b1538");
-    stk.getRange("D2").setValue("1. Set stock number in B2 (e.g. 100)");
-    stk.getRange("D3").setValue("2. When you mark order 'Confirmed' → stock auto-reduces");
-    stk.getRange("D4").setValue("3. Stock ≤ 3 → website shows 'low stock' warning");
-    stk.getRange("D5").setValue("4. Stock = 0 → website disables ordering");
-    stk.getRange("D6").setValue("5. To restock → just change B2");
-    stk.setColumnWidth(4, 400);
+  }
+  stk.clear();
+
+  // Headers
+  stk.getRange(1, 1).setValue("Product");
+  stk.getRange(1, 2).setValue("Stock");
+  fmtHeaderRow(stk, 1, 2, COLOR_DARK);
+
+  // Product row
+  stk.getRange(2, 1).setValue("Cemenrete CX");
+  stk.getRange(2, 2).setValue(100);
+
+  // Style product row
+  var productRow = stk.getRange(2, 1, 1, 2);
+  productRow.setBackground(COLOR_CREAM);
+  productRow.setFontSize(14);
+  productRow.setFontWeight("bold");
+  productRow.setBorder(true, true, true, true, true, true);
+  stk.getRange(2, 1).setFontColor(COLOR_BURGUNDY);
+  stk.getRange(2, 2).setFontColor(COLOR_BURGUNDY);
+  stk.getRange(2, 2).setHorizontalAlignment("center");
+
+  // Column widths
+  stk.setColumnWidth(1, 200);
+  stk.setColumnWidth(2, 100);
+
+  // Instructions (column D)
+  stk.getRange("D1").setValue("📦 Stock Management · إدارة المخزون")
+    .setFontWeight("bold").setFontSize(14).setFontColor(COLOR_BURGUNDY);
+
+  var instructions = [
+    "",
+    "1. Set stock number in B2 (e.g. 100)",
+    "2. When you mark order 'Confirmed' → stock auto-reduces",
+    "3. Stock ≤ 3 → website shows 'low stock' warning",
+    "4. Stock = 0 → website disables ordering",
+    "5. To restock → just change B2",
+    "",
+    "💡 Stock auto-updates via trigger (onEditTrigger)",
+    "   when you change Status to 'Confirmed' in Orders tab"
+  ];
+
+  for (var i = 0; i < instructions.length; i++) {
+    var row = 2 + i;
+    stk.getRange(row, 4).setValue(instructions[i]);
+    if (instructions[i].startsWith("💡")) {
+      stk.getRange(row, 4).setFontColor(COLOR_GOLD).setFontWeight("bold");
+    } else if (instructions[i].length > 0) {
+      stk.getRange(row, 4).setFontColor(COLOR_MUTED);
+    }
   }
 
-  // STATISTICS (simple)
-  var sh = ss.getSheetByName("Statistics");
-  if (!sh) {
-    sh = ss.insertSheet("Statistics");
-    sh.getRange("A1").setValue("Statistics").setFontWeight("bold").setFontSize(14).setFontColor("#8b1538");
+  stk.setColumnWidth(4, 450);
+  stk.setFrozenRows(1);
+}
 
-    sh.getRange("A3").setValue("Total Orders");
-    sh.getRange("B3").setFormula("=COUNTA(Orders!B2:B)");
-    sh.getRange("A4").setValue("Total Revenue (DA)");
-    sh.getRange("B4").setFormula("=SUM(Orders!I2:I)");
-    sh.getRange("A5").setValue("Avg Order (DA)");
-    sh.getRange("B5").setFormula("=IFERROR(ROUND(AVERAGE(Orders!I2:I),0),0)");
-    sh.getRange("A6").setValue("Current Stock");
-    sh.getRange("B6").setFormula("=Stock!B2");
+// ============================================================================
+//  DASHBOARD TAB — Beautiful Arabic Statistics
+// ============================================================================
 
-    for (var r = 3; r <= 6; r++) {
-      sh.getRange(r, 1).setFontWeight("bold").setFontColor("#6B6358");
-      sh.getRange(r, 2).setFontWeight("bold").setFontSize(14).setFontColor("#8b1538").setHorizontalAlignment("center").setNumberFormat("#,##0");
-    }
+function createDashboardTab(ss) {
+  var d = ss.getSheetByName("Dashboard");
+  if (!d) {
+    d = ss.insertSheet("Dashboard");
+  }
+  d.clear();
 
-    sh.getRange("A8").setValue("By Status").setFontWeight("bold").setFontColor("#9A7E3A");
-    sh.getRange("A9").setValue("Status");
-    sh.getRange("B9").setValue("Count");
-    fmtHeader(sh, 2, 9);
+  // Hide gridlines for clean look
+  d.setHiddenGridlines(true);
 
-    for (var j = 0; j < STATUS_OPTIONS.length; j++) {
-      var row = 10 + j;
-      var st2 = STATUS_OPTIONS[j];
-      var fc2 = (st2 === "Shipped") ? "#1C1815" : "#FFFFFF";
-      sh.getRange(row, 1).setValue(st2).setBackground(STATUS_COLORS[st2]).setFontColor(fc2).setFontWeight("bold");
-      sh.getRange(row, 2).setFormula('=COUNTIF(Orders!C2:C,"' + st2 + '")');
-    }
+  // Column widths
+  d.setColumnWidth(1, 20);   // spacer
+  d.setColumnWidth(2, 180);
+  d.setColumnWidth(3, 180);
+  d.setColumnWidth(4, 180);
+  d.setColumnWidth(5, 180);
+  d.setColumnWidth(6, 20);   // spacer
 
-    sh.setColumnWidth(1, 20);
-    sh.setColumnWidth(2, 15);
+  // === Title ===
+  d.getRange("B2:E2").merge();
+  d.getRange("B2").setValue("لوحة التحكم · Dashboard")
+    .setFontWeight("bold").setFontSize(24)
+    .setFontColor("#FFFFFF")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+  d.getRange("B2:E2").setBackground(COLOR_BURGUNDY);
+  d.setRowHeight(2, 50);
+
+  // === KPI Cards (Row 4-6) ===
+  d.getRange("B4").setValue("📊 النظرة العامة · Overview")
+    .setFontWeight("bold").setFontSize(14).setFontColor(COLOR_BURGUNDY);
+
+  // 4 KPI cards: B5, C5, D5, E5
+  createKPICard(d, "B", 5, "إجمالي الطلبات", "Total Orders", "=COUNTA(Orders!B2:B)", COLOR_BURGUNDY);
+  createKPICard(d, "C", 5, "إجمالي الإيرادات", "Revenue (DA)", "=SUM(Orders!I2:I)", COLOR_GOLD);
+  createKPICard(d, "D", 5, "متوسط الطلب", "Avg Order (DA)", "=IFERROR(ROUND(AVERAGE(Orders!I2:I),0),0)", "#016630");
+  createKPICard(d, "E", 5, "المخزون الحالي", "Current Stock", "=Stock!B2", "#2F7D5B");
+
+  // === Status Breakdown (Row 8-14) ===
+  d.getRange("B8").setValue("📋 حالة الطلبات · Order Status")
+    .setFontWeight("bold").setFontSize(14).setFontColor(COLOR_BURGUNDY);
+
+  d.getRange("B9").setValue("Status");
+  d.getRange("C9").setValue("Count");
+  d.getRange("D9").setValue("العدد");
+  fmtHeaderRow(d, 9, 3, COLOR_DARK, "B");
+
+  for (var i = 0; i < STATUS_OPTIONS.length; i++) {
+    var row = 10 + i;
+    var st = STATUS_OPTIONS[i];
+    d.getRange(row, 2).setValue(st)
+      .setBackground(STATUS_COLORS[st])
+      .setFontColor(STATUS_TEXT_COLORS[st])
+      .setFontWeight("bold")
+      .setHorizontalAlignment("center");
+    d.getRange(row, 3).setFormula('=COUNTIF(Orders!C2:C,"' + st + '")')
+      .setHorizontalAlignment("center")
+      .setFontWeight("bold")
+      .setFontSize(12);
+    d.getRange(row, 4).setValue(getStatusArabic(st))
+      .setHorizontalAlignment("center")
+      .setFontColor(COLOR_MUTED);
+    d.setRowHeight(row, 28);
   }
 
-  // Reorder tabs: Product, Orders, Stock, Statistics
-  ss.setActiveSheet(p); ss.moveActiveSheet(1);
-  ss.setActiveSheet(o); ss.moveActiveSheet(2);
-  ss.setActiveSheet(stk); ss.moveActiveSheet(3);
-  ss.setActiveSheet(sh); ss.moveActiveSheet(4);
+  // === Top Wilayas (Row 8, column E) ===
+  d.getRange("B16").setValue("🌍 أعلى الولايات · Top Wilayas")
+    .setFontWeight("bold").setFontSize(14).setFontColor(COLOR_BURGUNDY);
 
-  Logger.log("✅ Setup complete! 4 tabs created (with Idempotency Key column).");
-  Logger.log("📋 NEXT: Set up the trigger manually (see top of file).");
-  Logger.log("📋 THEN: Deploy → New deployment → Web app → Access: Anyone");
+  d.getRange("B17").setValue("Wilaya");
+  d.getRange("C17").setValue("Orders");
+  d.getRange("D17").setValue("الطلبات");
+  fmtHeaderRow(d, 17, 3, COLOR_DARK, "B");
+
+  // Top 5 wilayas (formulas — will show #N/A if no orders)
+  for (var w = 0; w < 5; w++) {
+    var row = 18 + w;
+    d.getRange(row, 2).setFormula('=IFERROR(INDEX(Orders!F2:F,MATCH(LARGE(IF(Orders!F2:F<>"",COUNTIF(Orders!F2:F,Orders!F2:F)),ROW()-17),COUNTIF(Orders!F2:F,Orders!F2:F),0)),"")')
+      .setHorizontalAlignment("center");
+    d.getRange(row, 3).setFormula('=IFERROR(LARGE(IF(Orders!F2:F<>"",COUNTIF(Orders!F2:F,Orders!F2:F)),ROW()-17),"")')
+      .setHorizontalAlignment("center")
+      .setFontWeight("bold");
+    d.getRange(row, 4).setValue("")
+      .setBackground(COLOR_CREAM);
+    d.setRowHeight(row, 24);
+  }
+
+  // === Recent Orders (Row 24+) ===
+  d.getRange("B24").setValue("🕒 أحدث الطلبات · Recent Orders")
+    .setFontWeight("bold").setFontSize(14).setFontColor(COLOR_BURGUNDY);
+
+  var recentHeaders = ["Order No", "Customer", "Wilaya", "Total (DA)"];
+  for (var h = 0; h < recentHeaders.length; h++) {
+    d.getRange(25, 2 + h).setValue(recentHeaders[h]);
+  }
+  fmtHeaderRow(d, 25, 4, COLOR_DARK, "B");
+
+  // Last 5 orders (formulas)
+  for (var r = 0; r < 5; r++) {
+    var row = 26 + r;
+    var offset = r;
+    d.getRange(row, 2).setFormula('=IFERROR(INDEX(Orders!B2:B,COUNTA(Orders!B2:B)-' + offset + '),"")')
+      .setHorizontalAlignment("center");
+    d.getRange(row, 3).setFormula('=IFERROR(INDEX(Orders!D2:D,COUNTA(Orders!D2:D)-' + offset + '),"")')
+      .setHorizontalAlignment("center");
+    d.getRange(row, 4).setFormula('=IFERROR(INDEX(Orders!F2:F,COUNTA(Orders!F2:F)-' + offset + '),"")')
+      .setHorizontalAlignment("center");
+    d.getRange(row, 5).setFormula('=IFERROR(INDEX(Orders!I2:I,COUNTA(Orders!I2:I)-' + offset + '),"")')
+      .setHorizontalAlignment("center")
+      .setFontWeight("bold");
+    d.setRowHeight(row, 24);
+  }
+
+  // === Footer ===
+  d.getRange("B32").setValue("💡 يتم تحديث الإحصائيات تلقائياً عند كل طلب جديد")
+    .setFontColor(COLOR_MUTED).setFontSize(10).setHorizontalAlignment("center");
+  d.getRange("B33").setValue("💡 Statistics auto-update on every new order")
+    .setFontColor(COLOR_MUTED).setFontSize(10).setHorizontalAlignment("center");
+
+  // Style spacer columns
+  d.getRange("A1:A33").setBackground("#FFFFFF");
+  d.getRange("F1:F33").setBackground("#FFFFFF");
+}
+
+function createKPICard(sheet, col, row, arabicLabel, englishLabel, formula, color) {
+  // Row 1: Arabic label
+  sheet.getRange(col + row).setValue(arabicLabel)
+    .setFontWeight("bold").setFontSize(11)
+    .setFontColor("#FFFFFF")
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle");
+  sheet.getRange(col + row).setBackground(color);
+
+  // Row 2: Big number (formula)
+  sheet.getRange(col + (row + 1)).setFormula(formula)
+    .setFontWeight("bold").setFontSize(28)
+    .setFontColor(color)
+    .setHorizontalAlignment("center")
+    .setVerticalAlignment("middle")
+    .setNumberFormat("#,##0");
+  sheet.getRange(col + (row + 1)).setBackground(COLOR_CREAM);
+
+  // Row 3: English label
+  sheet.getRange(col + (row + 2)).setValue(englishLabel)
+    .setFontSize(9)
+    .setFontColor(COLOR_MUTED)
+    .setHorizontalAlignment("center");
+  sheet.getRange(col + (row + 2)).setBackground(COLOR_CREAM);
+
+  // Borders
+  sheet.getRange(col + row + ":" + col + (row + 2)).setBorder(true, true, true, true, true, true);
+
+  // Row heights
+  sheet.setRowHeight(row, 24);
+  sheet.setRowHeight(row + 1, 50);
+  sheet.setRowHeight(row + 2, 18);
+}
+
+function getStatusArabic(status) {
+  var map = {
+    "New": "جديد",
+    "Confirmed": "مؤكد",
+    "Shipped": "مشحون",
+    "Delivered": "مسلّم",
+    "Cancelled": "ملغى"
+  };
+  return map[status] || status;
 }
 
 // ============================================================================
@@ -260,19 +533,17 @@ function addOrder(d) {
     }
   }
 
-  // --- Idempotency check: if same key exists, return original order ---
+  // --- Idempotency check ---
   var idempotencyKey = d.idempotencyKey || "";
   if (idempotencyKey) {
     try {
       var allData = s.getDataRange().getValues();
       for (var i = allData.length - 1; i >= 1; i--) {
-        // Column K = Idempotency Key (index 10)
         if (allData[i][10] === idempotencyKey) {
-          // Duplicate! Return original order
           return {
             success: true,
             order: {
-              id: allData[i][1],           // Order No
+              id: allData[i][1],
               orderNo: allData[i][1],
               total: Number(allData[i][8]) || total,
               duplicate: true
@@ -281,53 +552,48 @@ function addOrder(d) {
         }
       }
     } catch (idemErr) {
-      // If idempotency check fails, continue anyway (don't block the order)
+      // Continue anyway
     }
   }
 
-  // --- Generate order number (timestamp-based to avoid collisions) ---
+  // --- Generate order number ---
   var no = generateOrderNumber(s);
 
   // --- Append row (atomic via LockService) ---
   var lock = LockService.getScriptLock();
   try {
-    lock.waitLock(10000); // 10 second timeout
+    lock.waitLock(10000);
   } catch (lockErr) {
-    // If lock fails, proceed anyway (better to save the order than lose it)
+    // Continue anyway
   }
 
   try {
     s.appendRow([
-      new Date(),                          // A: Date
-      no,                                  // B: Order No
-      "New",                               // C: Status
-      String(d.fullName).trim(),           // D: Customer
-      String(d.phone).trim(),              // E: Phone
-      String(d.wilayaName),                // F: Wilaya
-      String(d.communeName),               // G: Commune
-      qty,                                 // H: Qty
-      total,                               // I: Total (DA)
-      String(d.notes || "").trim(),        // J: Notes
-      idempotencyKey                       // K: Idempotency Key
+      new Date(),
+      no,
+      "New",
+      String(d.fullName).trim(),
+      String(d.phone).trim(),
+      String(d.wilayaName),
+      String(d.communeName),
+      qty,
+      total,
+      String(d.notes || "").trim(),
+      idempotencyKey
     ]);
+
+    // Auto-refresh dashboard (non-blocking, failsafe)
+    try { refreshDashboard(); } catch (e) {}
 
     return {
       success: true,
-      order: {
-        id: no,
-        orderNo: no,
-        total: total
-      }
+      order: { id: no, orderNo: no, total: total }
     };
   } finally {
     try { lock.releaseLock(); } catch (e) {}
   }
 }
 
-/**
- * Generate unique order number: AUR-YYYY-NNNNNN
- * Uses row count + timestamp suffix to avoid collisions
- */
 function generateOrderNumber(s) {
   var lastRow = s.getLastRow();
   var n = lastRow > 1 ? lastRow - 1 : 0;
@@ -344,6 +610,8 @@ function getOrders() {
   var headers = data[0];
   var orders = [];
   for (var i = 1; i < data.length; i++) {
+    // Skip empty rows
+    if (!data[i][1] && !data[i][3]) continue;
     var obj = {};
     for (var j = 0; j < headers.length; j++) obj[headers[j]] = data[i][j];
     orders.push(obj);
@@ -358,7 +626,6 @@ function getOrders() {
 function getStock() {
   var s = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Stock");
   if (!s) {
-    // Failsafe: if Stock sheet missing, return "in stock" (don't block sales)
     return { stock: 999, lowStock: false, outOfStock: false };
   }
   var v = Number(s.getRange("B2").getValue()) || 0;
@@ -403,7 +670,6 @@ function getProduct() {
     p.lowStock = si.lowStock;
     p.outOfStock = si.outOfStock;
   } catch (e) {
-    // Failsafe: if stock check fails, don't block
     p.stock = 999;
     p.lowStock = false;
     p.outOfStock = false;
@@ -427,7 +693,7 @@ function updateProduct(pd) {
 }
 
 // ============================================================================
-//  STATISTICS
+//  STATISTICS (for API)
 // ============================================================================
 
 function getStats() {
@@ -440,9 +706,10 @@ function getStats() {
   var wilayaCounts = {}, statusCounts = {};
 
   for (var i = 1; i < data.length; i++) {
-    var total = data[i][8];   // I = Total (index 8)
-    var wilaya = data[i][5];  // F = Wilaya (index 5)
-    var status = data[i][2];  // C = Status (index 2)
+    if (!data[i][1] && !data[i][3]) continue;
+    var total = data[i][8];
+    var wilaya = data[i][5];
+    var status = data[i][2];
 
     if (total) totalRevenue += Number(total);
     totalOrders++;
@@ -470,6 +737,20 @@ function getStats() {
   };
 }
 
+/** Force-refresh dashboard formulas (called after every order). */
+function refreshDashboard() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var d = ss.getSheetByName("Dashboard");
+  if (!d) return;
+
+  // Trigger recalculation by touching a cell
+  var touch = d.getRange("A1").getValue();
+  d.getRange("A1").setValue(touch === "" ? "." : "");
+
+  // Force spreadsheet recalculation
+  SpreadsheetApp.flush();
+}
+
 // ============================================================================
 //  STOCK TRIGGER — fires when you edit Status column in Orders
 //  YOU MUST SET THIS UP MANUALLY (see instructions at top of file)
@@ -484,7 +765,7 @@ function onEditTrigger(e) {
 
     var row = e.range.getRow();
     var col = e.range.getColumn();
-    if (col !== 3 || row < 2) return; // Column C = Status, skip header
+    if (col !== 3 || row < 2) return; // Column C = Status
 
     var newStatus = e.value;
     var oldStatus = e.oldValue;
@@ -514,8 +795,10 @@ function onEditTrigger(e) {
         stockSheet.getRange("B2").setValue(current2 + qty);
       }
     }
+
+    // Refresh dashboard
+    try { refreshDashboard(); } catch (err) {}
   } catch (err) {
-    // Log but don't throw (trigger failures are silent anyway)
     Logger.log("onEditTrigger error: " + err.toString());
   }
 }
@@ -530,11 +813,14 @@ function out(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-function fmtHeader(sheet, cols, row) {
-  row = row || 1;
-  var r = sheet.getRange(row, 1, 1, cols);
+function fmtHeaderRow(sheet, row, cols, bgColor, startCol) {
+  startCol = startCol || "A";
+  var startColNum = startCol.charCodeAt(0) - 64;
+  var r = sheet.getRange(row, startColNum, 1, cols);
   r.setFontWeight("bold");
-  r.setBackground("#2A2520");
+  r.setBackground(bgColor);
   r.setFontColor("#FFFFFF");
   r.setHorizontalAlignment("center");
+  r.setVerticalAlignment("middle");
+  sheet.setRowHeight(row, 28);
 }
