@@ -2,26 +2,28 @@ import type { NextConfig } from "next";
 
 /**
  * When NEXT_PUBLIC_CDN_BASE is set (e.g. jsDelivr), we serve pre-optimized
- * images directly from the CDN — no need for Next.js image optimization
- * (which would proxy through origin and consume bandwidth).
+ * images directly from the CDN — no need for Next.js image optimization.
  */
 const CDN_ACTIVE = !!process.env.NEXT_PUBLIC_CDN_BASE;
 
+/**
+ * Base path for GitHub Pages (username.github.io/repo-name/).
+ * Empty string for custom domains or Cloudflare Pages.
+ * Set via NEXT_PUBLIC_BASE_PATH env var.
+ */
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
+
 const nextConfig: NextConfig = {
-  // Note: output: "standalone" removed — Netlify handles Next.js natively
-  // via its Next.js runtime plugin. For self-hosted (Caddy/Docker), re-add it.
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  reactStrictMode: false,
-  devIndicators: false,
+  // Static export — outputs to ./out/ folder
+  // Works on GitHub Pages, Cloudflare Pages, Netlify (static), any CDN
+  output: "export",
+
+  // Next.js Image optimization doesn't work with static export
+  // (and we serve pre-optimized images from jsDelivr CDN anyway)
   images: {
-    // When CDN is active: serve images as-is (already optimized, served from CDN)
-    // When no CDN: use Next.js optimization (AVIF/WebP)
-    unoptimized: CDN_ACTIVE,
+    unoptimized: true,
     formats: ["image/avif", "image/webp"],
-    minimumCacheTTL: 2592000, // 30 days
-    // Allow external image domains (for CDN-hosted images)
+    minimumCacheTTL: 2592000,
     ...(CDN_ACTIVE
       ? {
           remotePatterns: [
@@ -31,40 +33,20 @@ const nextConfig: NextConfig = {
         }
       : {}),
   },
-  // Aggressive static caching headers
-  async headers() {
-    return [
-      {
-        source: "/gallery/:path*",
-        headers: [
-          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
-        ],
-      },
-      {
-        source: "/logo.jpg",
-        headers: [
-          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
-        ],
-      },
-      {
-        source: "/logo.svg",
-        headers: [
-          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
-        ],
-      },
-      {
-        // HTML: cache for 7 days (content rarely changes), allow stale-while-revalidate
-        // This lets browsers + CDNs serve cached HTML → near-zero origin bandwidth
-        source: "/",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, max-age=604800, stale-while-revalidate=86400",
-          },
-        ],
-      },
-    ];
+
+  // GitHub Pages serves from /repo-name/ unless using a custom domain
+  // Empty for custom domain or Cloudflare Pages
+  ...(BASE_PATH ? { basePath: BASE_PATH } : {}),
+
+  // Add trailing slash to all routes (recommended for static export)
+  // Ensures relative paths work correctly on GitHub Pages
+  trailingSlash: true,
+
+  typescript: {
+    ignoreBuildErrors: true,
   },
+  reactStrictMode: false,
+  devIndicators: false,
 };
 
 export default nextConfig;

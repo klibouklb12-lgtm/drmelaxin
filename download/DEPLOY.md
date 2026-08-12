@@ -1,96 +1,100 @@
-# Dr.Melaxin — Netlify Deployment Guide
+# Dr.Melaxin — GitHub Pages Deployment Guide
 
 ## Overview
 
-This guide deploys the Dr.Melaxin storefront to Netlify via GitHub integration.
+Deploy the Dr.Melaxin storefront to **GitHub Pages** (free, 100GB bandwidth/month).
 
-**Architecture:**
+**Architecture (100% free, no server):**
 ```
-Visitor → Netlify (HTML + JS/CSS) → instant load
-                ↓ (when ordering)
-         POST /api/orders → Google Sheets (free, unlimited)
+Visitor → GitHub Pages (HTML + JS + CSS)
+                ↓ (images)
+         jsDelivr CDN (free, unlimited)
+                ↓ (orders)
+         Google Sheets (free, unlimited)
                 ↓ (stock check)
-         Google Sheets → cached 7 days in browser
+         Google Sheets (cached 7 days in browser)
 ```
 
-**Bandwidth estimate (with CDN active):**
-- First-time visitor: ~330KB from Netlify
-- Repeat visitor (7-day SW cache): ~4KB
-- 500k visits/month with 50% repeat ≈ 84GB (fits Netlify's 100GB free tier)
+**Bandwidth estimate (500k visits/month):**
+- Per first visit: ~200KB (HTML 8KB + JS 150KB + CSS 20KB, gzipped)
+- Repeat visit (7-day SW cache): ~4KB
+- 500k visits with 15% repeat ≈ 85GB → fits 100GB limit
+- Images: 0 (served from jsDelivr CDN)
 
 ---
 
 ## Step 1: Push to GitHub
 
 ```bash
-# In the project root:
 git init
 git add .
-git commit -m "Dr.Melaxin — Netlify-ready"
+git commit -m "Dr.Melaxin — GitHub Pages ready"
 git branch -M main
 git remote add origin https://github.com/YOUR_USER/drmelaxin.git
 git push -u origin main
 ```
 
-**Important:** Make the repo PUBLIC if you want to use the jsDelivr CDN (free unlimited image bandwidth). If private, images load from Netlify (counts toward bandwidth).
+**Repo MUST be public** (required for GitHub Pages free tier + jsDelivr CDN).
 
 ---
 
-## Step 2: Connect to Netlify
+## Step 2: Set Environment Variables
 
-1. Go to [app.netlify.com](https://app.netlify.com) → "Add new site" → "Import an existing project"
-2. Connect your GitHub account
-3. Select the `drmelaxin` repo
-4. Build settings (auto-detected from `netlify.toml`):
-   - **Build command:** `npm run build`
-   - **Publish directory:** `.next`
-   - **Node version:** 20
-5. Click "Deploy site"
+In GitHub: **Settings → Secrets and variables → Actions → Variables** (not Secrets — these need to be visible at build time):
 
----
+Add these as **Variables** (not Secrets):
 
-## Step 3: Set Environment Variables
-
-**CRITICAL — do this before the first deploy succeeds (or trigger a redeploy after):**
-
-1. Netlify dashboard → your site → **Site Settings** → **Environment Variables**
-2. Add each variable:
-
-| Key | Value | Required? |
+| Name | Value | Required? |
 |---|---|---|
 | `NEXT_PUBLIC_GOOGLE_SHEET_URL` | `https://script.google.com/macros/s/AKfycbyDcvKb2USPkCqZf9PqX-yxPvfo5rZ0IFGi98-syk5kU09l0q6ZazmFQ883BPoXCXiS/exec` | ✅ YES |
-| `NEXT_PUBLIC_CDN_BASE` | `https://cdn.jsdelivr.net/gh/YOUR_USER/drmelaxin@main` | ⚠️ Optional (recommended) |
+| `NEXT_PUBLIC_CDN_BASE` | `https://cdn.jsdelivr.net/gh/YOUR_USER/drmelaxin@main` | ✅ YES (saves bandwidth) |
+| `NEXT_PUBLIC_BASE_PATH` | `/drmelaxin` (your repo name) | ⚠️ If NOT using custom domain |
 
-3. After adding, go to **Deploys** → **Trigger deploy** → **Deploy site**
-
----
-
-## Step 4: Verify Deployment
-
-1. Visit your Netlify URL (e.g. `https://drmelaxin.netlify.app`)
-2. Check:
-   - Homepage loads with all images
-   - Carousel works
-   - Order form accepts input
-   - Submit creates an order (check Google Sheet → "Orders" tab)
-   - Stock warning appears if stock ≤ 3
+**Important:** Set `NEXT_PUBLIC_BASE_PATH` to `/{repo-name}` if using the default `username.github.io/repo-name/` URL. Leave empty if using a custom domain.
 
 ---
 
-## Optional: Activate jsDelivr CDN (Free Unlimited Image Bandwidth)
+## Step 3: Enable GitHub Pages
 
-**Why?** Offloads ~488KB of images per visit to jsDelivr (free, unlimited). Netlify only serves HTML + JS/CSS (~330KB).
+1. Go to: **Settings → Pages**
+2. Under "Build and deployment":
+   - **Source:** GitHub Actions
+3. The workflow in `.github/workflows/deploy.yml` handles everything automatically.
 
-**Setup:**
-1. Make sure your GitHub repo is PUBLIC
-2. In Netlify → Site Settings → Environment Variables:
-   - Key: `NEXT_PUBLIC_CDN_BASE`
-   - Value: `https://cdn.jsdelivr.net/gh/YOUR_GITHUB_USER/YOUR_REPO@main`
-3. Trigger redeploy
-4. Wait ~5 minutes for jsDelivr to cache the assets
-5. Verify: open browser DevTools → Network → images should load from `cdn.jsdelivr.net`
+---
 
-**Fallback:** If jsDelivr is down, the Service Worker automatically falls back to your Netlify origin. No manual intervention needed.
+## Step 4: Trigger First Deploy
+
+Push any commit to `main`:
+```bash
+git commit --allow-empty -m "trigger deploy" && git push
+```
+
+Or go to: **Actions tab → "Deploy to GitHub Pages" → Run workflow**
+
+The deploy takes ~2 minutes. Your site will be at:
+```
+https://YOUR_USER.github.io/drmelaxin/
+```
+
+---
+
+## Step 5: (Optional) Custom Domain
+
+To use `drmelaxin.com` instead of `username.github.io/drmelaxin/`:
+
+1. Buy a domain (~$10/year from Namecheap, Cloudflare, etc.)
+2. In GitHub: **Settings → Pages → Custom domain → enter your domain**
+3. At your domain registrar, set DNS:
+   - `A` record → `185.199.108.153`
+   - `A` record → `185.199.109.153`
+   - `A` record → `185.199.110.153`
+   - `A` record → `185.199.111.153`
+   - Or `CNAME` record → `YOUR_USER.github.io`
+4. Remove `NEXT_PUBLIC_BASE_PATH` from env vars (leave empty)
+5. Push to trigger redeploy
+
+With a custom domain, GitHub Pages still gives 100GB/month free. For truly unlimited, deploy the same repo to **Cloudflare Pages** (zero code changes).
 
 ---
 
@@ -98,12 +102,13 @@ git push -u origin main
 
 | Component | Service | Free Tier | Purpose |
 |---|---|---|---|
-| Hosting | Netlify | 100GB bandwidth/month | HTML + JS/CSS |
-| Images (optional) | jsDelivr CDN | Unlimited | Gallery + logo images |
-| Orders backend | Google Sheets | Unlimited | Order storage + admin |
-| Stock management | Google Sheets | Unlimited | Live stock updates |
+| Hosting | GitHub Pages | 100 GB bandwidth/month | HTML + JS + CSS |
+| Images | jsDelivr CDN | Unlimited | Gallery + logo images |
+| Orders | Google Sheets | Unlimited | Order storage |
+| Stock | Google Sheets | Unlimited | Live stock updates |
+| Admin | Google Sheets | Unlimited | Product + stock management |
 | Fonts | Google Fonts | Unlimited | Noto Sans Arabic + Cormorant |
-| Rate limiting | In-memory | Per-instance | Basic abuse prevention |
+| Auto-deploy | GitHub Actions | 2000 min/month | CI/CD pipeline |
 
 **Total monthly cost: $0**
 
@@ -111,67 +116,74 @@ git push -u origin main
 
 ## Bandwidth Math (500k visits/month)
 
-| Scenario | Netlify bandwidth | Fits 100GB free? |
+| Scenario | GitHub Pages bandwidth | Fits 100GB? |
 |---|---|---|
-| No CDN, no SW (worst case) | 500k × 830KB = 415GB | ❌ No |
-| CDN active, no SW | 500k × 330KB = 165GB | ❌ No |
-| CDN + SW, 50% repeat | 250k × 330KB + 250k × 4KB = 84GB | ✅ Yes |
-| CDN + SW, 70% repeat | 150k × 330KB + 350k × 4KB = 51GB | ✅ Yes |
-| CDN + SW, 90% repeat | 50k × 330KB + 450k × 4KB = 18GB | ✅ Yes |
+| No CDN (images from GitHub) | 500k × 688KB = 344GB | ❌ No |
+| CDN active, no SW | 500k × 200KB = 100GB | ⚠️ At limit |
+| CDN + SW, 15% repeat | 425k × 200KB + 75k × 4KB = 85GB | ✅ Yes |
+| CDN + SW, 30% repeat | 350k × 200KB + 150k × 4KB = 70GB | ✅ Yes |
 
-**Conclusion:** 500k visits/month fits Netlify free IF:
-- ✅ CDN is active (images offloaded)
-- ✅ Service Worker is caching (repeat visitors = ~4KB)
-- ✅ ~50%+ of visitors are repeat (within 7 days)
-
-For pure ad traffic (mostly unique visitors), consider **Cloudflare Pages** (unlimited bandwidth) — same repo, same code, just connect GitHub there instead.
+**Required for 500k visits:**
+- ✅ `NEXT_PUBLIC_CDN_BASE` must be set (images offloaded to jsDelivr)
+- ✅ Service Worker caches repeat visitors (7-day cache)
+- ✅ Repo must be public
 
 ---
 
 ## Admin Panel
 
-- URL: `https://your-site.netlify.app/admin`
+- URL: `https://your-site.github.io/drmelaxin/admin/`
 - Password: `007`
-- Features: edit product info, update stock, view stats
-- All changes saved to Google Sheets (live, no redeploy needed)
+- All changes save to Google Sheets (live, no redeploy needed)
 
 ---
 
 ## Google Sheets Setup (Already Done)
 
-The Google Apps Script is already deployed at:
-```
-https://script.google.com/macros/s/AKfycbyDcvKb2USPkCqZf9PqX-yxPvfo5rZ0IFGi98-syk5kU09l0q6ZazmFQ883BPoXCXiS/exec
-```
-
-If you need to redeploy it (new sheet, different account):
+The Google Apps Script is already deployed. If you need to redeploy:
 1. Create empty Google Sheet
 2. Extensions → Apps Script
-3. Paste contents of `download/google-apps-script.gs`
-4. Run `setup()` function (authorize when prompted)
-5. Set up the `onEditTrigger` trigger manually (see top of the script file)
+3. Paste `download/google-apps-script.gs`
+4. Run `setup()` → authorize
+5. Set up `onEditTrigger` trigger manually (see script header)
 6. Deploy → New deployment → Web app → Execute as: Me → Access: Anyone
-7. Copy the URL → update `NEXT_PUBLIC_GOOGLE_SHEET_URL` in Netlify
+7. Copy URL → update `NEXT_PUBLIC_GOOGLE_SHEET_URL` in GitHub Variables
+
+---
+
+## Safety Net: Cloudflare Pages
+
+If you ever hit GitHub's 100GB limit:
+
+1. Go to [pages.cloudflare.com](https://pages.cloudflare.com)
+2. Connect your GitHub repo
+3. Build settings: Framework = Next.js, Build command = `npm run build`, Output = `out`
+4. Set the same env vars
+5. Deploy
+
+**Same code, same repo, zero changes.** Cloudflare Pages = unlimited bandwidth, unlimited requests, free forever.
 
 ---
 
 ## Troubleshooting
 
 **Images not loading:**
-- If CDN active: check repo is PUBLIC, check `NEXT_PUBLIC_CDN_BASE` is correct
-- If no CDN: check `public/gallery/` folder is in the repo
+- Check repo is PUBLIC
+- Check `NEXT_PUBLIC_CDN_BASE` matches your GitHub repo URL
+- Wait 5 min for jsDelivr to cache after first deploy
 
 **Orders not submitting:**
-- Check `NEXT_PUBLIC_GOOGLE_SHEET_URL` is set in Netlify env vars
-- Check Google Apps Script deployment access is "Anyone"
-- Check browser console for CORS errors
+- Check `NEXT_PUBLIC_GOOGLE_SHEET_URL` is set in GitHub Variables
+- Check Apps Script deployment access is "Anyone"
+- Check browser console for errors
 
-**Stock not updating:**
-- Make sure `onEditTrigger` is set up in Apps Script (clock icon → Add Trigger)
+**Assets 404 on `username.github.io/repo/`:**
+- Set `NEXT_PUBLIC_BASE_PATH` to `/repo-name`
+- Push to trigger rebuild
 
-**Bandwidth exceeded:**
-- Activate the CDN (Step 4 above)
-- Or migrate to Cloudflare Pages (unlimited bandwidth, same code)
+**Build fails in GitHub Actions:**
+- Check Actions tab → click the failed run → read the log
+- Most common: missing env vars (Step 2)
 
 ---
 
@@ -179,12 +191,13 @@ If you need to redeploy it (new sheet, different account):
 
 ```bash
 # Local development
-bun run dev
+npm run dev
 
-# Production build (test locally)
-bun run build && bun run start
+# Test static export locally
+npm run build
+npx serve out
 
-# Deploy to Netlify (via GitHub push)
+# Deploy (just push to main)
 git add . && git commit -m "update" && git push
-# Netlify auto-deploys on push
+# GitHub Actions auto-deploys in ~2 min
 ```

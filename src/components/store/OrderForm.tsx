@@ -14,6 +14,7 @@ import { PRODUCT, DELIVERY_OPTIONS } from "@/config/product";
 import { tierSubtotal, formatDZD } from "@/config/pricing";
 import { WILAYAS } from "@/lib/wilayas";
 import { communesForWilaya } from "@/lib/communes";
+import { createOrder } from "@/lib/orders";
 import { t } from "@/lib/i18n";
 import type { DeliveryId } from "@/config/product";
 import { useReveal } from "@/hooks/use-reveal";
@@ -53,20 +54,23 @@ export function OrderForm({
     if (!formValid || submitting) return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ product: PRODUCT.slug, fullName, phone, wilayaId, communeId, delivery, quantity, notes }),
+      const order = await createOrder({
+        product: PRODUCT.slug,
+        fullName,
+        phone,
+        wilayaId: wilayaId!,
+        communeId: communeId!,
+        delivery,
+        quantity,
+        notes,
       });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        if (data.code === "RATE_LIMIT") toast.error(t("toast.rate.limit"));
-        else toast.error(data.error || t("toast.error"));
-        return;
-      }
       toast.success(t("toast.success"));
-      onSubmitted(data.order);
-    } catch { toast.error(t("toast.error")); }
+      onSubmitted(order);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (msg === "RATE_LIMIT") toast.error(t("toast.rate.limit"));
+      else toast.error(t("toast.error"));
+    }
     finally { setSubmitting(false); }
   }
 

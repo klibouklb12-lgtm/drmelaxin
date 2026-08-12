@@ -1,27 +1,22 @@
 /**
  * ============================================================================
- *  ORDER PERSISTENCE — Google Sheets backend (works on Netlify/Vercel/anywhere)
+ *  ORDER SUBMISSION — Client-side, posts directly to Google Sheets
  * ============================================================================
  *
- *  WHY GOOGLE SHEETS?
- *  - Free, unlimited (no 100GB bandwidth limit, no function invocation limit)
- *  - Already set up (NEXT_PUBLIC_GOOGLE_SHEET_URL in .env)
- *  - Works on Netlify's serverless functions (no filesystem needed)
- *  - You can view/edit orders directly in the Sheet
- *  - Stock auto-reduces when you mark an order "Confirmed" in the Sheet
+ *  WHY CLIENT-SIDE?
+ *  - Static export (GitHub Pages / Cloudflare Pages) has no server
+ *  - Google Apps Script handles order number generation + row append
+ *  - No serverless functions = no compute costs = truly free
+ *
+ *  SECURITY:
+ *  - Price is re-derived client-side (for display) but the Apps Script
+ *    should also validate/re-derive on receive (see google-apps-script.gs)
+ *  - Basic rate limiting via localStorage (per-device, not real rate limiting)
+ *  - Zod validation happens in OrderForm before calling this function
  *
  *  ARCHITECTURE:
- *  Client → POST /api/orders → Google Apps Script → Google Sheet
- *                              (server-side fetch, CORS-safe)
- *
- *  The /api/orders route is a thin proxy that:
- *  1. Validates input (Zod)
- *  2. Re-derives price server-side (never trusts client)
- *  3. Forwards to Google Sheets
- *  4. Returns the order number
- *
- *  Rate limiting: simple IP-based, in-memory (per serverless instance).
- *  For production-scale, upgrade to Upstash Redis (free 10k/day).
+ *  Client (browser) → Google Apps Script → Google Sheet
+ *    (uses text/plain content type to avoid CORS preflight)
  * ============================================================================
  */
 import { PRODUCT } from "@/config/product";
@@ -32,21 +27,16 @@ import { findCommune } from "@/lib/communes";
 import type { OrderInput } from "@/lib/types";
 
 /**
- * Server-side Google Sheets URL (NOT exposed to client).
- * Falls back to the public URL if server var not set.
+ * Google Sheets URL (exposed to client — same as stock checking URL).
+ * The Apps Script is deployed with "Access: Anyone" so it works from browser.
  */
 function getSheetUrl(): string {
-  return (
-    process.env.GOOGLE_SHEET_URL || // server-only (preferred)
-    process.env.NEXT_PUBLIC_GOOGLE_SHEET_URL || // public (fallback)
-    ""
-  );
+  return process.env.NEXT_PUBLIC_GOOGLE_SHEET_URL || "";
 }
 
 /**
- * Server-authoritative price derivation.
- * NEVER trust the client's quantity/discount/total — always re-derive
- * from the validated quantity and delivery id.
+ * Price derivation (client-side, for display + sent to sheet).
+ * The Apps Script can also re-derive server-side if needed.
  */
 function derivePrice(quantity: number, delivery: DeliveryId) {
   const unitPrice = PRODUCT.basePrice;
@@ -69,13 +59,33 @@ export interface CreateOrderResult {
 }
 
 /**
- * Create an order by posting to Google Sheets (via Apps Script).
- * The Apps Script handles order number generation and appends a row.
+ * Simple per-device rate limiting (basic abuse prevention).
+ * Real rate limiting would need a server, but this stops casual spam.
  */
-export async function createOrder(
-  input: OrderInput,
-  _ip: string | null
-): Promise<CreateOrderResult> {
+const RATE_LIMIT_KEY = "drmelaxin_order_times";
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX = 5; // 5 orders per minute per device
+
+function isRateLimited(): boolean {
+  try {
+    const now = Date.now();
+    const raw = localStorage.getItem(RATE_LIMIT_KEY);
+    const times: number[] = raw ? JSON.parse(raw) : [];
+    const recent = times.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+    if (recent.length >= RATE_LIMIT_MAX) return true;
+    recent.push(now);
+    localStorage.setItem(RATE_LIMIT_KEY, JSON.stringify(recent));
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Create an order by posting to Google Sheets (via Apps Script).
+ * Works client-side — no server needed.
+ */
+export async function createOrder(input: OrderInput): Promise<CreateOrderResult> {
   const wilaya = findWilaya(input.wilayaId);
   if (!wilaya) {
     throw new Error("Wilaya not found");
@@ -100,12 +110,18 @@ export async function createOrder(
     throw new Error("Invalid quantity tier");
   }
 
+  // Per-device rate limit check
+  if (isRateLimited()) {
+    throw new Error("RATE_LIMIT");
+  }
+
   const sheetUrl = getSheetUrl();
   if (!sheetUrl) {
     throw new Error("GOOGLE_SHEET_URL not configured");
   }
 
-  // Post to Google Apps Script (it handles order number generation + row append)
+  // Post to Google Apps Script
+  // Uses text/plain content type to avoid CORS preflight (Apps Script doesn't support OPTIONS)
   const response = await fetch(sheetUrl, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -118,7 +134,6 @@ export async function createOrder(
       total: price.total,
       notes: input.notes?.trim() || "",
     }),
-    // Apps Script doesn't need redirects followed manually — fetch handles it
     redirect: "follow",
   });
 
@@ -135,7 +150,7 @@ export async function createOrder(
   }
 
   if (!data.success || !data.order) {
-    throw new Error(data.order ? "Unknown error" : "Google Sheets rejected order");
+    throw new Error("Google Sheets rejected order");
   }
 
   return {
@@ -143,32 +158,4 @@ export async function createOrder(
     orderNo: data.order.orderNo || data.order.id || "",
     total: data.order.total ?? price.total,
   };
-}
-
-/**
- * Simple in-memory rate limiter (per serverless instance).
- * For production scale, upgrade to Upstash Redis (free 10k commands/day).
- *
- * On Netlify, each function instance has its own memory, so this provides
- * approximate (not exact) rate limiting — sufficient for basic abuse prevention.
- */
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-
-export async function isRateLimited(
-  ip: string | null,
-  windowMinutes = 1,
-  maxOrders = 5
-): Promise<boolean> {
-  if (!ip) return false;
-  const now = Date.now();
-  const windowMs = windowMinutes * 60 * 1000;
-
-  const entry = rateLimitMap.get(ip);
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + windowMs });
-    return false;
-  }
-
-  entry.count += 1;
-  return entry.count > maxOrders;
 }

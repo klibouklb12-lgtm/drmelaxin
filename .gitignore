@@ -18,7 +18,7 @@ dist/
 .env.development
 .env*.local
 
-# Database (SQLite — local only, not for production)
+# Database (no longer used — static export, no Prisma)
 db/*.db
 db/*.db-journal
 db/*.sqlite
