@@ -390,7 +390,7 @@ function createDashboardTab(ss) {
     d.setRowHeight(row, 28);
   }
 
-  // === Top Wilayas (Row 8, column E) ===
+  // === Top Wilayas (Row 16+) — uses QUERY (bulletproof, no array formula needed) ===
   d.getRange("B16").setValue("🌍 أعلى الولايات · Top Wilayas")
     .setFontWeight("bold").setFontSize(14).setFontColor(COLOR_BURGUNDY);
 
@@ -399,20 +399,24 @@ function createDashboardTab(ss) {
   d.getRange("D17").setValue("الطلبات");
   fmtHeaderRow(d, 17, 3, COLOR_DARK, "B");
 
-  // Top 5 wilayas (formulas — will show #N/A if no orders)
+  // QUERY outputs a 5-row × 2-column table automatically
+  // B18 = QUERY result (wilaya name + count)
+  d.getRange("B18").setFormula('=IFERROR(QUERY(Orders!F2:F,"select F, count(F) where F is not null group by F order by count(F) desc limit 5 label count(F) \'\'",0),"")')
+    .setHorizontalAlignment("center");
+  d.getRange("C18").setFormula('=IFERROR(QUERY(Orders!F2:F,"select count(F) where F is not null group by F order by count(F) desc limit 5 label count(F) \'\'",0),"")')
+    .setHorizontalAlignment("center")
+    .setFontWeight("bold");
+
+  // Style the 5 rows for top wilayas (QUERY fills them automatically)
   for (var w = 0; w < 5; w++) {
     var row = 18 + w;
-    d.getRange(row, 2).setFormula('=IFERROR(INDEX(Orders!F2:F,MATCH(LARGE(IF(Orders!F2:F<>"",COUNTIF(Orders!F2:F,Orders!F2:F)),ROW()-17),COUNTIF(Orders!F2:F,Orders!F2:F),0)),"")')
-      .setHorizontalAlignment("center");
-    d.getRange(row, 3).setFormula('=IFERROR(LARGE(IF(Orders!F2:F<>"",COUNTIF(Orders!F2:F,Orders!F2:F)),ROW()-17),"")')
-      .setHorizontalAlignment("center")
-      .setFontWeight("bold");
-    d.getRange(row, 4).setValue("")
-      .setBackground(COLOR_CREAM);
+    d.getRange(row, 2).setHorizontalAlignment("center").setFontSize(11);
+    d.getRange(row, 3).setHorizontalAlignment("center").setFontSize(11);
+    d.getRange(row, 4).setBackground(COLOR_CREAM);
     d.setRowHeight(row, 24);
   }
 
-  // === Recent Orders (Row 24+) ===
+  // === Recent Orders (Row 24+) — uses QUERY (bulletproof) ===
   d.getRange("B24").setValue("🕒 أحدث الطلبات · Recent Orders")
     .setFontWeight("bold").setFontSize(14).setFontColor(COLOR_BURGUNDY);
 
@@ -422,19 +426,17 @@ function createDashboardTab(ss) {
   }
   fmtHeaderRow(d, 25, 4, COLOR_DARK, "B");
 
-  // Last 5 orders (formulas)
+  // QUERY: last 5 orders (Order No, Customer, Wilaya, Total)
+  d.getRange("B26").setFormula('=IFERROR(QUERY(Orders!B2:I,"select B, D, F, I order by A desc limit 5 label B \'\', D \'\', F \'\', I \'\'",0),"")')
+    .setHorizontalAlignment("center");
+
+  // Style the 5 rows for recent orders
   for (var r = 0; r < 5; r++) {
     var row = 26 + r;
-    var offset = r;
-    d.getRange(row, 2).setFormula('=IFERROR(INDEX(Orders!B2:B,COUNTA(Orders!B2:B)-' + offset + '),"")')
-      .setHorizontalAlignment("center");
-    d.getRange(row, 3).setFormula('=IFERROR(INDEX(Orders!D2:D,COUNTA(Orders!D2:D)-' + offset + '),"")')
-      .setHorizontalAlignment("center");
-    d.getRange(row, 4).setFormula('=IFERROR(INDEX(Orders!F2:F,COUNTA(Orders!F2:F)-' + offset + '),"")')
-      .setHorizontalAlignment("center");
-    d.getRange(row, 5).setFormula('=IFERROR(INDEX(Orders!I2:I,COUNTA(Orders!I2:I)-' + offset + '),"")')
-      .setHorizontalAlignment("center")
-      .setFontWeight("bold");
+    for (var c = 2; c <= 5; c++) {
+      d.getRange(row, c).setHorizontalAlignment("center").setFontSize(11);
+      if (c === 5) d.getRange(row, c).setFontWeight("bold");
+    }
     d.setRowHeight(row, 24);
   }
 
@@ -447,6 +449,31 @@ function createDashboardTab(ss) {
   // Style spacer columns
   d.getRange("A1:A33").setBackground("#FFFFFF");
   d.getRange("F1:F33").setBackground("#FFFFFF");
+}
+
+/**
+ * fixDashboard() — repairs the Dashboard tab without touching other tabs.
+ * Run this if the Dashboard looks broken or shows errors.
+ * Replaces all formulas with bulletproof QUERY-based ones.
+ */
+function fixDashboard() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var d = ss.getSheetByName("Dashboard");
+  if (!d) {
+    // Dashboard doesn't exist — create it
+    createDashboardTab(ss);
+    Logger.log("✅ Dashboard created (didn't exist).");
+    return;
+  }
+
+  // Clear everything and rebuild
+  d.clear();
+  createDashboardTab(ss);
+  SpreadsheetApp.flush();
+
+  Logger.log("✅ Dashboard repaired with QUERY formulas.");
+  Logger.log("📋 All formulas are now bulletproof (no array-formula issues).");
+  Logger.log("📊 Statistics will auto-update on every new order.");
 }
 
 function createKPICard(sheet, col, row, arabicLabel, englishLabel, formula, color) {

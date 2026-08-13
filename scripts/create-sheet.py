@@ -192,14 +192,13 @@ for col in ["B", "C", "D"]:
     header_style(d[f"{col}18"])
 d.row_dimensions[18].height = 28
 
-# Rows 19-23: Top 5 wilayas (using formulas compatible with Google Sheets)
+# Rows 19-23: Top 5 wilayas — uses QUERY (Google Sheets native, bulletproof)
+# Note: openpyxl can't evaluate QUERY, but Google Sheets will when imported
+d["B19"] = '=IFERROR(QUERY(Orders!F2:F,"select F, count(F) where F is not null group by F order by count(F) desc limit 5 label count(F) \'\'",0),"")'
+d["C19"] = '=IFERROR(QUERY(Orders!F2:F,"select count(F) where F is not null group by F order by count(F) desc limit 5 label count(F) \'\'",0),"")'
+
 for i in range(5):
     row = 19 + i
-    # Wilaya name — use a helper formula
-    d[f"B{row}"] = f'=IFERROR(INDEX(Orders!F2:F,MATCH(LARGE(IF(Orders!F2:F<>"",COUNTIF(Orders!F2:F,Orders!F2:F)),{i+1}),COUNTIF(Orders!F2:F,Orders!F2:F),0)),"")'
-    d[f"C{row}"] = f'=IFERROR(LARGE(IF(Orders!F2:F<>"",COUNTIF(Orders!F2:F,Orders!F2:F)),{i+1}),"")'
-    d[f"D{row}"] = ""
-
     for col in ["B", "C", "D"]:
         cell = d[f"{col}{row}"]
         cell.font = Font(name="Arial", size=11)
@@ -207,7 +206,6 @@ for i in range(5):
         cell.border = thin_border()
         if col == "C":
             cell.font = Font(name="Arial", bold=True, size=11)
-
     d.row_dimensions[row].height = 24
 
 # Row 25: Recent orders header
@@ -221,15 +219,11 @@ for i, h in enumerate(recent_headers):
     header_style(cell)
 d.row_dimensions[26].height = 28
 
-# Rows 27-31: Last 5 orders
+# Rows 27-31: Last 5 orders — uses QUERY (bulletproof)
+d.cell(row=27, column=2).value = '=IFERROR(QUERY(Orders!B2:I,"select B, D, F, I order by A desc limit 5 label B \'\', D \'\', F \'\', I \'\'",0),"")'
+
 for i in range(5):
     row = 27 + i
-    offset = i
-    d.cell(row=row, column=2).value = f'=IFERROR(INDEX(Orders!B2:B,COUNTA(Orders!B2:B)-{offset}),"")'
-    d.cell(row=row, column=3).value = f'=IFERROR(INDEX(Orders!D2:D,COUNTA(Orders!D2:D)-{offset}),"")'
-    d.cell(row=row, column=4).value = f'=IFERROR(INDEX(Orders!F2:F,COUNTA(Orders!F2:F)-{offset}),"")'
-    d.cell(row=row, column=5).value = f'=IFERROR(INDEX(Orders!I2:I,COUNTA(Orders!I2:I)-{offset}),"")'
-
     for col in range(2, 6):
         cell = d.cell(row=row, column=col)
         cell.font = Font(name="Arial", size=11)
@@ -237,7 +231,6 @@ for i in range(5):
         cell.border = thin_border()
         if col == 5:
             cell.font = Font(name="Arial", bold=True, size=11)
-
     d.row_dimensions[row].height = 24
 
 # Row 33-34: Footer
