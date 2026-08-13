@@ -36,43 +36,37 @@ export function Storefront() {
   const [lowStock, setLowStock] = useState(false);
   const [outOfStock, setOutOfStock] = useState(false);
 
-  // STOCK CHECKING — resilient, never blocks sales
+  // STOCK CHECKING — real-time, fresh on every page load
+  // Since Cloudflare Pages = unlimited bandwidth, we always fetch fresh stock.
+  // This ensures stock=0 is detected immediately (no stale 7-day cache).
   // Strategy:
-  // 1. Check localStorage cache (7-day TTL) — if stock > 0, TRUST IT (zero requests)
-  // 2. If cache says 0 or no cache: ONE fresh fetch with 8s timeout
-  // 3. If fetch fails: default to IN STOCK (don't block orders — better to oversell than lose a sale)
-  // 4. On any error: fail open (enable the form)
+  // 1. Show cached value instantly (for UX — no flash of "loading")
+  // 2. ALWAYS fetch fresh stock from Google Sheets (8s timeout)
+  // 3. If fetch fails: keep cached value, or fail-open if no cache (don't block sales)
+  // 4. When stock=0 detected: form is disabled immediately
   useEffect(() => {
     if (!SHEET_URL) return;
 
     const STOCK_CACHE_KEY = "drmelaxin_stock";
-    const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
     const FETCH_TIMEOUT_MS = 8000; // 8 second timeout
 
     const checkStock = () => {
-      // Check cache first
-      let cacheSaysZero = false;
+      // Step 1: Show cached value instantly (for UX)
       try {
         const cached = localStorage.getItem(STOCK_CACHE_KEY);
         if (cached) {
           const parsed = JSON.parse(cached);
-          if (Date.now() - parsed.timestamp < CACHE_TTL) {
-            setStock(parsed.stock);
-            setLowStock(parsed.lowStock);
-            setOutOfStock(parsed.outOfStock);
-            // If cache says stock > 0: trust it, zero requests
-            if (!parsed.outOfStock) return;
-            // If cache says stock = 0: don't trust cache, do fresh fetch
-            cacheSaysZero = true;
-          }
+          setStock(parsed.stock);
+          setLowStock(parsed.lowStock);
+          setOutOfStock(parsed.outOfStock);
         }
       } catch {}
 
-      // Fetch with timeout (AbortController)
+      // Step 2: ALWAYS fetch fresh stock (unlimited bandwidth = no reason to cache long-term)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-      fetch(`${SHEET_URL}?action=stock`, { signal: controller.signal })
+      fetch(`${SHEET_URL}?action=stock&_t=${Date.now()}`, { signal: controller.signal })
         .then(r => r.text())
         .then(text => {
           clearTimeout(timeoutId);
@@ -83,7 +77,7 @@ export function Storefront() {
               setStock(data.stock);
               setLowStock(data.lowStock);
               setOutOfStock(data.outOfStock);
-              // Update cache with fresh data
+              // Update cache (for instant display on next visit)
               try {
                 localStorage.setItem(STOCK_CACHE_KEY, JSON.stringify({
                   stock: data.stock,
@@ -94,18 +88,20 @@ export function Storefront() {
               } catch {}
             }
           } catch {
-            // JSON parse failed — fail open (don't block orders)
+            // JSON parse failed — keep cached value, fail open
           }
         })
         .catch(() => {
           clearTimeout(timeoutId);
-          // Fetch failed (timeout, network, CORS) — FAIL OPEN:
-          // If cache said zero, keep showing out of stock
-          // If no cache, assume stock is fine (better to sell than block)
-          if (!cacheSaysZero) {
-            setOutOfStock(false);
-            setLowStock(false);
-          }
+          // Fetch failed — keep whatever we showed from cache
+          // If no cache at all, fail open (assume in stock — don't block sales)
+          try {
+            const cached = localStorage.getItem(STOCK_CACHE_KEY);
+            if (!cached) {
+              setOutOfStock(false);
+              setLowStock(false);
+            }
+          } catch {}
         });
     };
 
