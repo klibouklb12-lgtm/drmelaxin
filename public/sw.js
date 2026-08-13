@@ -20,7 +20,7 @@
  * ============================================================================
  */
 
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4'; // bumped: excluded Google Apps Script from cache
 const CACHE_NAME = `drmelaxin-${CACHE_VERSION}`;
 const HTML_CACHE = `drmelaxin-html-${CACHE_VERSION}`;
 const OFFLINE_URL = '/'; // fallback to cached homepage
@@ -130,7 +130,6 @@ self.addEventListener('fetch', (event) => {
 
   // POST requests (orders) — always go to network, never cache
   if (request.method === 'POST') {
-    // If POST fails (offline), the client-side orders.ts handles queuing
     return;
   }
 
@@ -139,6 +138,19 @@ self.addEventListener('fetch', (event) => {
 
   // Skip non-http(s) protocols
   if (!request.url.startsWith('http')) return;
+
+  // CRITICAL: NEVER cache Google Apps Script requests (stock, orders, product, stats)
+  // These must ALWAYS hit the network for real-time data.
+  // Caching them would freeze stock at stale values and could replay orders.
+  if (request.url.includes('script.google.com') ||
+      request.url.includes('/macros/s/') ||
+      request.url.includes('action=stock') ||
+      request.url.includes('action=order') ||
+      request.url.includes('action=product') ||
+      request.url.includes('action=stats')) {
+    // Network-only — let it pass through without SW interference
+    return;
+  }
 
   // --- Strategy 1: Navigation (HTML) — stale-while-revalidate ---
   if (isNavigation(request)) {

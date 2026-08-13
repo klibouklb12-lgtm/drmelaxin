@@ -44,11 +44,17 @@ export function Storefront() {
   // 2. ALWAYS fetch fresh stock from Google Sheets (8s timeout)
   // 3. If fetch fails: keep cached value, or fail-open if no cache (don't block sales)
   // 4. When stock=0 detected: form is disabled immediately
+  // 5. Abort fetch on unmount — prevents setState on unmounted component
   useEffect(() => {
     if (!SHEET_URL) return;
 
     const STOCK_CACHE_KEY = "drmelaxin_stock";
     const FETCH_TIMEOUT_MS = 8000; // 8 second timeout
+
+    // Track if component is still mounted (prevents setState on unmounted component)
+    let isMounted = true;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
     const checkStock = () => {
       // Step 1: Show cached value instantly (for UX)
@@ -56,19 +62,19 @@ export function Storefront() {
         const cached = localStorage.getItem(STOCK_CACHE_KEY);
         if (cached) {
           const parsed = JSON.parse(cached);
-          setStock(parsed.stock);
-          setLowStock(parsed.lowStock);
-          setOutOfStock(parsed.outOfStock);
+          if (isMounted) {
+            setStock(parsed.stock);
+            setLowStock(parsed.lowStock);
+            setOutOfStock(parsed.outOfStock);
+          }
         }
       } catch {}
 
-      // Step 2: ALWAYS fetch fresh stock (unlimited bandwidth = no reason to cache long-term)
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
+      // Step 2: ALWAYS fetch fresh stock
       fetch(`${SHEET_URL}?action=stock&_t=${Date.now()}`, { signal: controller.signal })
         .then(r => r.text())
         .then(text => {
+          if (!isMounted) return; // component unmounted — don't update state
           clearTimeout(timeoutId);
           if (!text.trim().startsWith("{")) return;
           try {
@@ -77,7 +83,6 @@ export function Storefront() {
               setStock(data.stock);
               setLowStock(data.lowStock);
               setOutOfStock(data.outOfStock);
-              // Update cache (for instant display on next visit)
               try {
                 localStorage.setItem(STOCK_CACHE_KEY, JSON.stringify({
                   stock: data.stock,
@@ -87,14 +92,12 @@ export function Storefront() {
                 }));
               } catch {}
             }
-          } catch {
-            // JSON parse failed — keep cached value, fail open
-          }
+          } catch {}
         })
         .catch(() => {
+          if (!isMounted) return;
           clearTimeout(timeoutId);
-          // Fetch failed — keep whatever we showed from cache
-          // If no cache at all, fail open (assume in stock — don't block sales)
+          // Fetch failed — keep cache, or fail-open if no cache
           try {
             const cached = localStorage.getItem(STOCK_CACHE_KEY);
             if (!cached) {
@@ -107,13 +110,19 @@ export function Storefront() {
 
     checkStock();
 
-    // Flush any offline-queued orders (from previous offline sessions)
+    // Flush any offline-queued orders
     flushOfflineQueue().catch(() => {});
 
-    // Also flush when network reconnects
     const handleOnline = () => { flushOfflineQueue().catch(() => {}); };
     window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
+
+    // Cleanup: abort fetch + remove listener + mark unmounted
+    return () => {
+      isMounted = false;
+      controller.abort();
+      clearTimeout(timeoutId);
+      window.removeEventListener("online", handleOnline);
+    };
   }, []);
 
   // --- bfcache restore: if user navigates back to success page, stay on landing ---
@@ -285,10 +294,14 @@ function PhotoCarousel() {
   const total = photos.length;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Guard against empty photos array (would cause modulo by zero / undefined access)
+  const safeIndex = total > 0 ? index % total : 0;
+  const currentPhoto = photos[safeIndex] || photos[0];
+
   const next = useCallback(() => {
-    setIndex((i) => (i + 1) % total);
+    setIndex((i) => total > 0 ? (i + 1) % total : 0);
   }, [total]);
-  const goTo = useCallback((i: number) => setIndex(i), []);
+  const goTo = useCallback((i: number) => setIndex(total > 0 ? i % total : 0), [total]);
 
   useEffect(() => {
     if (isPaused) return;
@@ -310,16 +323,18 @@ function PhotoCarousel() {
           style={{ border: "3px solid rgba(255, 255, 255, 1)" }}
         >
           {/* Only render the current photo — with blur-up + scale-in transition */}
-          <Image
-            key={index}
-            src={photos[index].src}
-            alt={photos[index].alt}
-            fill
-            priority={index <= 1}
-            quality={85}
-            sizes="(max-width: 768px) 100vw, 384px"
-            className="object-cover carousel-image-in"
-          />
+          {currentPhoto && (
+            <Image
+              key={safeIndex}
+              src={currentPhoto.src}
+              alt={currentPhoto.alt}
+              fill
+              priority={safeIndex <= 1}
+              quality={85}
+              sizes="(max-width: 768px) 100vw, 384px"
+              className="object-cover carousel-image-in"
+            />
+          )}
 
           {/* Badge — "مضاد للتجاعيد" */}
           <div className="absolute top-3 right-3 z-10">
@@ -333,7 +348,7 @@ function PhotoCarousel() {
 
           <div className="absolute top-3 left-3 z-10">
             <span className="inline-flex items-center bg-black/40 backdrop-blur-sm text-white px-2 py-0.5 rounded-full text-[10px] font-medium">
-              {index + 1} / {total}
+              {safeIndex + 1} / {total}
             </span>
           </div>
 
