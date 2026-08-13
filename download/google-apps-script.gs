@@ -390,7 +390,7 @@ function createDashboardTab(ss) {
     d.setRowHeight(row, 28);
   }
 
-  // === Top Wilayas (Row 16+) — uses QUERY (bulletproof, no array formula needed) ===
+  // === Top Wilayas (Row 16+) — single QUERY outputs 2 columns (name + count) ===
   d.getRange("B16").setValue("🌍 أعلى الولايات · Top Wilayas")
     .setFontWeight("bold").setFontSize(14).setFontColor(COLOR_BURGUNDY);
 
@@ -399,24 +399,26 @@ function createDashboardTab(ss) {
   d.getRange("D17").setValue("الطلبات");
   fmtHeaderRow(d, 17, 3, COLOR_DARK, "B");
 
-  // QUERY outputs a 5-row × 2-column table automatically
-  // B18 = QUERY result (wilaya name + count)
-  d.getRange("B18").setFormula('=IFERROR(QUERY(Orders!F2:F,"select F, count(F) where F is not null group by F order by count(F) desc limit 5 label count(F) \'\'",0),"")')
-    .setHorizontalAlignment("center");
-  d.getRange("C18").setFormula('=IFERROR(QUERY(Orders!F2:F,"select count(F) where F is not null group by F order by count(F) desc limit 5 label count(F) \'\'",0),"")')
-    .setHorizontalAlignment("center")
-    .setFontWeight("bold");
+  // Single QUERY outputs BOTH columns (B = name, C = count) — guaranteed alignment
+  // Uses "where F is not null and F != ''" to skip empty cells
+  // "label count(F) ''" removes the default header so it's just the number
+  d.getRange("B18").setFormula(
+    '=IFERROR(QUERY(Orders!F2:I,' +
+    '"select F, count(F) where F is not null and F != \'\' ' +
+    'group by F order by count(F) desc limit 5 ' +
+    'label F \'Wilaya\', count(F) \'Orders\'",0),"No orders yet")'
+  );
 
-  // Style the 5 rows for top wilayas (QUERY fills them automatically)
+  // Style the 5 rows
   for (var w = 0; w < 5; w++) {
     var row = 18 + w;
     d.getRange(row, 2).setHorizontalAlignment("center").setFontSize(11);
-    d.getRange(row, 3).setHorizontalAlignment("center").setFontSize(11);
+    d.getRange(row, 3).setHorizontalAlignment("center").setFontSize(11).setFontWeight("bold");
     d.getRange(row, 4).setBackground(COLOR_CREAM);
     d.setRowHeight(row, 24);
   }
 
-  // === Recent Orders (Row 24+) — uses QUERY (bulletproof) ===
+  // === Recent Orders (Row 24+) — single QUERY outputs 4 columns ===
   d.getRange("B24").setValue("🕒 أحدث الطلبات · Recent Orders")
     .setFontWeight("bold").setFontSize(14).setFontColor(COLOR_BURGUNDY);
 
@@ -426,11 +428,16 @@ function createDashboardTab(ss) {
   }
   fmtHeaderRow(d, 25, 4, COLOR_DARK, "B");
 
-  // QUERY: last 5 orders (Order No, Customer, Wilaya, Total)
-  d.getRange("B26").setFormula('=IFERROR(QUERY(Orders!B2:I,"select B, D, F, I order by A desc limit 5 label B \'\', D \'\', F \'\', I \'\'",0),"")')
-    .setHorizontalAlignment("center");
+  // Single QUERY outputs 4 columns starting at B26 (B=OrderNo, C=Customer, D=Wilaya, E=Total)
+  // "order by A desc" = newest first (column A = Date)
+  // "label" removes default headers so cells show just the data
+  d.getRange("B26").setFormula(
+    '=IFERROR(QUERY(Orders!B2:I,' +
+    '"select B, D, F, I where B is not null order by A desc limit 5 ' +
+    'label B \'\', D \'\', F \'\', I \'\'",0),"No orders yet")'
+  );
 
-  // Style the 5 rows for recent orders
+  // Style the 5 rows
   for (var r = 0; r < 5; r++) {
     var row = 26 + r;
     for (var c = 2; c <= 5; c++) {
@@ -798,6 +805,7 @@ function onEditTrigger(e) {
     var newStatus = e.value;
     var oldStatus = e.oldValue;
 
+    // If cell was cleared, do nothing
     if (!newStatus) return;
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -807,21 +815,37 @@ function onEditTrigger(e) {
     var qtyCell = sheet.getRange(row, 8); // H = Qty
     var qty = Number(qtyCell.getValue()) || 0;
 
-    // Reduce stock when marking as Confirmed
-    if (newStatus === "Confirmed" && oldStatus !== "Confirmed") {
-      if (qty > 0) {
+    // === STOCK RESERVATION LOGIC (bulletproof) ===
+    // "Reserved" statuses: Confirmed, Shipped, Delivered (stock is held)
+    // "Unreserved" statuses: New, Cancelled (stock is NOT held)
+    //
+    // Transitions:
+    //   Unreserved → Reserved:  DECREASE stock (reserve it)
+    //   Reserved → Unreserved:  INCREASE stock (release it back)
+    //   Reserved → Reserved:    NO CHANGE (still reserved, just stage changed)
+    //   Unreserved → Unreserved: NO CHANGE
+
+    var RESERVED_STATUSES = ["Confirmed", "Shipped", "Delivered"];
+
+    function isReserved(status) {
+      return RESERVED_STATUSES.indexOf(status) !== -1;
+    }
+
+    var wasReserved = isReserved(oldStatus);
+    var nowReserved = isReserved(newStatus);
+
+    if (qty > 0) {
+      if (!wasReserved && nowReserved) {
+        // Reserve: decrease stock
         var current = Number(stockSheet.getRange("B2").getValue()) || 0;
         var newStock = Math.max(0, current - qty);
         stockSheet.getRange("B2").setValue(newStock);
-      }
-    }
-
-    // Restore stock when unmarking Confirmed
-    if (oldStatus === "Confirmed" && newStatus !== "Confirmed") {
-      if (qty > 0) {
+      } else if (wasReserved && !nowReserved) {
+        // Release: increase stock back
         var current2 = Number(stockSheet.getRange("B2").getValue()) || 0;
         stockSheet.getRange("B2").setValue(current2 + qty);
       }
+      // else: no change needed (both reserved or both unreserved)
     }
 
     // Refresh dashboard

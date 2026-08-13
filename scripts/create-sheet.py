@@ -192,10 +192,8 @@ for col in ["B", "C", "D"]:
     header_style(d[f"{col}18"])
 d.row_dimensions[18].height = 28
 
-# Rows 19-23: Top 5 wilayas — uses QUERY (Google Sheets native, bulletproof)
-# Note: openpyxl can't evaluate QUERY, but Google Sheets will when imported
-d["B19"] = '=IFERROR(QUERY(Orders!F2:F,"select F, count(F) where F is not null group by F order by count(F) desc limit 5 label count(F) \'\'",0),"")'
-d["C19"] = '=IFERROR(QUERY(Orders!F2:F,"select count(F) where F is not null group by F order by count(F) desc limit 5 label count(F) \'\'",0),"")'
+# Rows 19-23: Top 5 wilayas — single QUERY outputs 2 columns (name + count)
+d["B19"] = '=IFERROR(QUERY(Orders!F2:I,"select F, count(F) where F is not null and F != \'\' group by F order by count(F) desc limit 5 label F \'Wilaya\', count(F) \'Orders\'",0),"No orders yet")'
 
 for i in range(5):
     row = 19 + i
@@ -219,8 +217,8 @@ for i, h in enumerate(recent_headers):
     header_style(cell)
 d.row_dimensions[26].height = 28
 
-# Rows 27-31: Last 5 orders — uses QUERY (bulletproof)
-d.cell(row=27, column=2).value = '=IFERROR(QUERY(Orders!B2:I,"select B, D, F, I order by A desc limit 5 label B \'\', D \'\', F \'\', I \'\'",0),"")'
+# Rows 27-31: Last 5 orders — single QUERY outputs 4 columns
+d.cell(row=27, column=2).value = '=IFERROR(QUERY(Orders!B2:I,"select B, D, F, I where B is not null order by A desc limit 5 label B \'\', D \'\', F \'\', I \'\'",0),"No orders yet")'
 
 for i in range(5):
     row = 27 + i
