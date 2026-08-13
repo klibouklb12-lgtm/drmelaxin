@@ -93,6 +93,7 @@ function doGet(e) {
     if (a === "stock") return out(getStock());
     if (a === "stats") return out(getStats());
     if (a === "orders") return out(getOrders());
+    if (a === "order") return out(addOrder(e.parameter));
     return out({ error: "unknown action" });
   } catch (err) {
     return out({ error: err.toString() });
