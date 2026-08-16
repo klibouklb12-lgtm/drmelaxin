@@ -114,10 +114,20 @@ export default function AdminPage() {
         action: "updateProduct",
         product: { basePrice, oldPrice, brandName, lineName, taglineArabic, descriptionArabic }
       }),
-    }).then(() => { setSaved(true); setTimeout(() => setSaved(false), 3000); })
+    })
+    .then(r => r.json().catch(() => ({})))
+    .then(data => {
+      if (data.success) {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      } else {
+        setError(data.error || "فشل الحفظ");
+        setTimeout(() => setError(""), 3000);
+      }
+    })
     .catch(() => {
-      // Show error briefly so user knows save failed (not stuck loading)
-      setSaved(false);
+      setError("تعذّر الاتصال");
+      setTimeout(() => setError(""), 3000);
     });
   }
 
@@ -126,9 +136,20 @@ export default function AdminPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "updateStock", stock }),
-    }).then(() => { setStockSaved(true); setTimeout(() => setStockSaved(false), 3000); })
+    })
+    .then(r => r.json().catch(() => ({})))
+    .then(data => {
+      if (data.success) {
+        setStockSaved(true);
+        setTimeout(() => setStockSaved(false), 3000);
+      } else {
+        setError(data.error || "فشل الحفظ");
+        setTimeout(() => setError(""), 3000);
+      }
+    })
     .catch(() => {
-      setStockSaved(false);
+      setError("تعذّر الاتصال");
+      setTimeout(() => setError(""), 3000);
     });
   }
 
@@ -159,6 +180,12 @@ export default function AdminPage() {
           <a href="/" className="text-sm text-muted-foreground hover:text-burgundy" style={{ fontFamily: "var(--font-arabic)" }}>← الموقع</a>
         </div>
 
+        {/* Error banner (shown when save fails) */}
+        {error && authed && (
+          <div className="rounded-xl p-3 text-center text-sm" style={{ background: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.25)", color: "#991b1b", fontFamily: "var(--font-arabic)" }}>
+            ⚠️ {error}
+          </div>
+        )}
         {/* Tabs */}
         <div className="flex gap-2 flex-wrap">
           {(["product", "stock", "stats", "health"] as const).map(t => (

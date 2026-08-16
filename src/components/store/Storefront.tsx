@@ -103,13 +103,32 @@ export function Storefront() {
         .catch(() => {
           if (!isMounted) return;
           clearTimeout(timeoutId);
+          // Fetch failed — try to use cache (even if old) as fallback
+          // This prevents stock=0 from permanently blocking sales if sheet is down
           try {
             const cached = localStorage.getItem(STOCK_CACHE_KEY);
-            if (!cached) {
+            if (cached) {
+              // Use cached value even if old (better than nothing)
+              const parsed = JSON.parse(cached);
+              let stockVal = typeof parsed.stock === "number" ? parsed.stock : parseInt(String(parsed.stock), 10);
+              if (isNaN(stockVal) || stockVal < 0) stockVal = 0;
+              // Only use cached if it said in-stock (don't trust old out-of-stock)
+              if (stockVal > 0) {
+                setStock(stockVal);
+                setLowStock(stockVal > 0 && stockVal <= 3);
+                setOutOfStock(false);
+              }
+              // If cache said 0, keep showing 0 (safer to block than oversell)
+            } else {
+              // No cache at all — fail open (assume in stock, don't block sales)
               setOutOfStock(false);
               setLowStock(false);
             }
-          } catch {}
+          } catch {
+            // localStorage error — fail open
+            setOutOfStock(false);
+            setLowStock(false);
+          }
         });
     };
 

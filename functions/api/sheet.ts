@@ -53,21 +53,27 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     } else {
       // POST: read body, convert to GET params for Apps Script
       const body = await request.json().catch(() => ({}));
-      const params = new URLSearchParams();
 
-      if (body.action) {
-        params.set("action", body.action);
+      if (!body || !body.action) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Missing action in body" }),
+          { headers: corsHeaders, status: 400 }
+        );
       }
+
+      const params = new URLSearchParams();
+      params.set("action", body.action);
 
       // Convert product/stock updates to query params
       if (body.action === "updateProduct" && body.product) {
         for (const [k, v] of Object.entries(body.product)) {
-          params.set(k, String(v));
+          // Skip 'action' to avoid conflict (shouldn't happen, but safe)
+          if (k !== "action") params.set(k, String(v));
         }
       } else if (body.action === "updateStock" && body.stock !== undefined) {
         params.set("stock", String(body.stock));
       }
-      // Default: pass through all body fields as query params
+      // Default: pass through all body fields as query params (except action)
       else {
         for (const [k, v] of Object.entries(body)) {
           if (k !== "action") params.set(k, String(v));
