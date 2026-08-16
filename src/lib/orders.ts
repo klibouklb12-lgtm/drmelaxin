@@ -28,12 +28,7 @@ import { findCommune } from "@/lib/communes";
 import { sanitizeName, sanitizeNotes, normalizePhone, sanitizeQuantity } from "@/lib/sanitize";
 import type { OrderInput } from "@/lib/types";
 
-/** Google Sheets URL (exposed to client — same as stock checking URL). */
-function getSheetUrl(): string {
-  return process.env.NEXT_PUBLIC_GOOGLE_SHEET_URL || "";
-}
-
-/** Price derivation (client-side, for display + sent to sheet). */
+/** Price derivation (client-side, for display + sent to server). */
 function derivePrice(quantity: number, delivery: DeliveryId) {
   const unitPrice = PRODUCT.basePrice;
   const tier = PRODUCT.tiers.find((t) => t.quantity === quantity);
@@ -133,82 +128,55 @@ function fetchWithTimeout(
   });
 }
 
-// --- Single attempt to submit order via GET (bulletproof — no POST/CORS issues) ---
+// --- Single attempt to submit order via Pages Function (POST, no PII in URL) ---
 async function postOrderOnce(
-  sheetUrl: string,
   payload: Record<string, unknown>,
   idempotencyKey: string
 ): Promise<CreateOrderResult> {
-  // Build GET URL with query parameters
-  // GET is used because Apps Script POST deployments are unreliable (405 errors)
-  // GET always works (stock/product/stats already use it successfully)
-  const params = new URLSearchParams();
-  params.set("action", "order");
-  params.set("fullName", String(payload.fullName || ""));
-  params.set("phone", String(payload.phone || ""));
-  params.set("wilayaName", String(payload.wilayaName || ""));
-  params.set("communeName", String(payload.communeName || ""));
-  params.set("quantity", String(payload.quantity || "1"));
-  params.set("total", String(payload.total || "0"));
-  // Truncate notes to 300 chars to stay within URL limits (Arabic chars expand 3x when encoded)
-  params.set("notes", String(payload.notes || "").slice(0, 300));
-  params.set("idempotencyKey", idempotencyKey);
-  // Cache buster — prevents browser/CDN from caching the response
-  params.set("_t", Date.now().toString());
-
-  const getUrl = `${sheetUrl}?${params.toString()}`;
-
+  // POST to our own Pages Function (same-origin, no CORS, Apps Script URL hidden)
   const response = await fetchWithTimeout(
-    getUrl,
+    "/api/order",
     {
-      method: "GET",
-      redirect: "follow",
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, idempotencyKey }),
     },
-    15000 // 15 second timeout
+    15000
   );
 
-  // Handle non-OK responses with better classification
   if (!response.ok) {
-    if (response.status === 405) {
-      throw new OrderError(
-        "SERVER",
-        "Google Apps Script not accepting requests. Check deployment."
-      );
+    if (response.status === 429) {
+      throw new OrderError("RATE_LIMIT", "Too many orders. Please wait.");
     }
-    if (response.status === 403 || response.status === 401) {
-      throw new OrderError("SERVER", "Google Apps Script access denied. Check deployment access.");
+    if (response.status === 400) {
+      const data = await response.json().catch(() => ({}));
+      throw new OrderError("VALIDATION", data.error || "Validation failed");
     }
     if (response.status >= 500) {
-      throw new OrderError("SERVER", `Google Sheets server error ${response.status}`);
+      throw new OrderError("SERVER", `Server error ${response.status}`);
     }
-    throw new OrderError("SERVER", `Google Sheets responded ${response.status}`);
+    throw new OrderError("SERVER", `Request failed ${response.status}`);
   }
 
   const text = await response.text();
 
-  // Handle empty response
   if (!text || text.trim().length === 0) {
-    throw new OrderError("SERVER", "Empty response from Google Sheets");
+    throw new OrderError("SERVER", "Empty response");
   }
 
-  // Handle HTML response (means Apps Script returned an error page, not JSON)
   if (text.trim().startsWith("<") || text.includes("<!DOCTYPE")) {
-    throw new OrderError(
-      "SERVER",
-      "Google Apps Script returned HTML (not JSON). Deployment may be broken."
-    );
+    throw new OrderError("SERVER", "Invalid response format");
   }
 
   let data: { success?: boolean; order?: { id?: string; orderNo?: string; total?: number }; error?: string };
   try {
     data = JSON.parse(text);
   } catch {
-    throw new OrderError("SERVER", "Invalid JSON response from Google Sheets");
+    throw new OrderError("SERVER", "Invalid JSON response");
   }
 
   if (!data.success || !data.order) {
-    const errMsg = data.error || "Google Sheets rejected order";
-    throw new OrderError("SERVER", errMsg);
+    throw new OrderError("SERVER", data.error || "Order rejected");
   }
 
   return {
@@ -252,9 +220,6 @@ export function hasOfflineOrders(): boolean {
  * Returns the number of orders successfully submitted.
  */
 export async function flushOfflineQueue(): Promise<number> {
-  const sheetUrl = getSheetUrl();
-  if (!sheetUrl) return 0;
-
   try {
     const raw = localStorage.getItem(OFFLINE_QUEUE_KEY);
     if (!raw) return 0;
@@ -267,10 +232,9 @@ export async function flushOfflineQueue(): Promise<number> {
 
     for (const item of queue) {
       try {
-        await postOrderOnce(sheetUrl, item.payload, item.key);
+        await postOrderOnce(item.payload, item.key);
         successCount++;
       } catch {
-        // Keep in queue for next attempt (but don't keep forever — 24h max)
         if (Date.now() - item.ts < 24 * 60 * 60 * 1000) {
           remaining.push(item);
         }
@@ -337,11 +301,6 @@ export async function createOrder(input: OrderInput): Promise<CreateOrderResult>
     throw new OrderError("RATE_LIMIT", "Too many orders. Please wait a minute.");
   }
 
-  const sheetUrl = getSheetUrl();
-  if (!sheetUrl) {
-    throw new OrderError("SERVER", "GOOGLE_SHEET_URL not configured");
-  }
-
   // --- Prepare payload (sanitized) ---
   const idempotencyKey = generateIdempotencyKey({ ...input, fullName, phone });
   const payload = {
@@ -369,7 +328,7 @@ export async function createOrder(input: OrderInput): Promise<CreateOrderResult>
     }
 
     try {
-      const result = await postOrderOnce(sheetUrl, payload, idempotencyKey);
+      const result = await postOrderOnce(payload, idempotencyKey);
       return result;
     } catch (err) {
       lastError = err instanceof OrderError ? err : new OrderError("UNKNOWN", String(err));

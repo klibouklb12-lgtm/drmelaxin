@@ -36,22 +36,13 @@ export function Storefront() {
   const [lowStock, setLowStock] = useState(false);
   const [outOfStock, setOutOfStock] = useState(false);
 
-  // STOCK CHECKING — real-time, fresh on every page load
-  // Since Cloudflare Pages = unlimited bandwidth, we always fetch fresh stock.
-  // This ensures stock=0 is detected immediately (no stale 7-day cache).
-  // Strategy:
-  // 1. Show cached value instantly (for UX — no flash of "loading")
-  // 2. ALWAYS fetch fresh stock from Google Sheets (8s timeout)
-  // 3. If fetch fails: keep cached value, or fail-open if no cache (don't block sales)
-  // 4. When stock=0 detected: form is disabled immediately
-  // 5. Abort fetch on unmount — prevents setState on unmounted component
+  // STOCK CHECKING — real-time via Cloudflare Pages Function (KV-cached)
+  // Client fetches /api/stock → Pages Function checks KV → falls back to Apps Script
+  // Result: 50ms response time (KV cache hit), Apps Script only hit 288 times/day
   useEffect(() => {
-    if (!SHEET_URL) return;
-
     const STOCK_CACHE_KEY = "drmelaxin_stock";
-    const FETCH_TIMEOUT_MS = 8000; // 8 second timeout
+    const FETCH_TIMEOUT_MS = 8000;
 
-    // Track if component is still mounted (prevents setState on unmounted component)
     let isMounted = true;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -70,11 +61,11 @@ export function Storefront() {
         }
       } catch {}
 
-      // Step 2: ALWAYS fetch fresh stock
-      fetch(`${SHEET_URL}?action=stock&_t=${Date.now()}`, { signal: controller.signal })
+      // Step 2: Fetch fresh stock via Pages Function (KV-cached, 50ms)
+      fetch(`/api/stock?_t=${Date.now()}`, { signal: controller.signal })
         .then(r => r.text())
         .then(text => {
-          if (!isMounted) return; // component unmounted — don't update state
+          if (!isMounted) return;
           clearTimeout(timeoutId);
           if (!text.trim().startsWith("{")) return;
           try {
@@ -97,7 +88,6 @@ export function Storefront() {
         .catch(() => {
           if (!isMounted) return;
           clearTimeout(timeoutId);
-          // Fetch failed — keep cache, or fail-open if no cache
           try {
             const cached = localStorage.getItem(STOCK_CACHE_KEY);
             if (!cached) {

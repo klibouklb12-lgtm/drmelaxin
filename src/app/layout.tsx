@@ -22,15 +22,14 @@ const notoSansArabic = Noto_Sans_Arabic({
   subsets: ["arabic", "latin"],
   variable: "--font-sans",
   display: "swap",
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "700"],
 });
 
 const cormorant = Cormorant_Garamond({
   subsets: ["latin"],
   variable: "--font-display",
   display: "swap",
-  weight: ["400", "500", "600", "700"],
-  style: ["normal", "italic"],
+  weight: ["400", "600"],
 });
 
 const amiri = Amiri({
@@ -45,10 +44,14 @@ export const metadata: Metadata = {
   title: `${BRAND.name} ${PRODUCT.lineName} — ${PRODUCT.subtitle}`,
   description: PRODUCT.descriptionFrench,
   icons: { icon: "/logo.svg" },
+  alternates: {
+    canonical: "/",
+  },
   openGraph: {
     title: `${BRAND.name} ${PRODUCT.lineName}`,
     description: PRODUCT.taglineFrench,
     type: "website",
+    locale: "ar_DZ",
     images: [{ url: PRODUCT.photos[0].src }],
   },
   twitter: {
@@ -57,11 +60,28 @@ export const metadata: Metadata = {
     description: PRODUCT.taglineFrench,
     images: [PRODUCT.photos[0].src],
   },
-  // HTML caching is now controlled by next.config.ts headers():
-  //   Cache-Control: public, max-age=604800, stale-while-revalidate=86400
-  // (7-day cache + 1-day stale-while-revalidate → near-zero origin bandwidth)
-  // The old no-cache header was removed because it forced every visit to
-  // re-download HTML from origin — a massive bandwidth waste.
+  robots: {
+    index: true,
+    follow: true,
+  },
+};
+
+/** JSON-LD structured data for SEO (Google rich results). */
+const productJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "Product",
+  name: `${BRAND.name} ${PRODUCT.lineName}`,
+  description: PRODUCT.descriptionFrench,
+  brand: {
+    "@type": "Brand",
+    name: BRAND.name,
+  },
+  offers: {
+    "@type": "Offer",
+    price: PRODUCT.basePrice,
+    priceCurrency: "DZD",
+    availability: "https://schema.org/InStock",
+  },
 };
 
 export default function RootLayout({
@@ -73,8 +93,12 @@ export default function RootLayout({
         {/* Preconnect to external origins for faster first load */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link rel="preconnect" href="https://script.google.com" />
         <link rel="dns-prefetch" href="https://cdn.jsdelivr.net" />
+        {/* JSON-LD structured data for SEO */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
+        />
       </head>
       <body
         suppressHydrationWarning

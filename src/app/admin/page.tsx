@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { PRODUCT } from "@/config/product";
 
-const SHEET_URL = process.env.NEXT_PUBLIC_GOOGLE_SHEET_URL || "";
+// Admin uses /api/sheet proxy (Pages Function) — Apps Script URL hidden
+const API_URL = "/api/sheet";
 
 export default function AdminPage() {
   const [authed, setAuthed] = useState(false);
@@ -31,10 +32,10 @@ export default function AdminPage() {
   // Stats
   const [stats, setStats] = useState<any>(null);
 
-  // Load product + stock from sheet on auth
+  // Load product + stock via Pages Function proxy
   useEffect(() => {
-    if (!authed || !SHEET_URL) return;
-    fetch(`${SHEET_URL}?action=product`)
+    if (!authed) return;
+    fetch(`${API_URL}?action=product`)
       .then(r => r.text())
       .then(text => {
         if (!text.trim().startsWith("{")) return;
@@ -52,8 +53,8 @@ export default function AdminPage() {
 
   // Load stats when tab switched
   useEffect(() => {
-    if (tab === "stats" && SHEET_URL && !stats) {
-      fetch(`${SHEET_URL}?action=stats`)
+    if (tab === "stats" && !stats) {
+      fetch(`${API_URL}?action=stats`)
         .then(r => r.text())
         .then(text => {
           if (text.trim().startsWith("{")) {
@@ -71,9 +72,9 @@ export default function AdminPage() {
   }
 
   function handleSaveProduct() {
-    if (!SHEET_URL) { setSaved(true); setTimeout(() => setSaved(false), 3000); return; }
-    fetch(SHEET_URL, {
+    fetch(API_URL, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "updateProduct",
         product: { basePrice, oldPrice, brandName, lineName, taglineArabic, descriptionArabic }
@@ -82,9 +83,9 @@ export default function AdminPage() {
   }
 
   function handleSaveStock() {
-    if (!SHEET_URL) { setStockSaved(true); setTimeout(() => setStockSaved(false), 3000); return; }
-    fetch(SHEET_URL, {
+    fetch(API_URL, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "updateStock", stock }),
     }).then(() => { setStockSaved(true); setTimeout(() => setStockSaved(false), 3000); });
   }
@@ -246,18 +247,12 @@ function HealthTab() {
   const [offlineCount, setOfflineCount] = useState(0);
   const [offlineOrders, setOfflineOrders] = useState<Array<Record<string, unknown>>>([]);
 
-  // Check sheet health
+  // Check sheet health via /api/stock (Pages Function)
   useEffect(() => {
-    if (!SHEET_URL) {
-      setSheetStatus("fail");
-      setSheetMessage("NEXT_PUBLIC_GOOGLE_SHEET_URL not set in env vars");
-      return;
-    }
-
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-    fetch(`${SHEET_URL}?action=stock`, { signal: controller.signal })
+    fetch(`/api/stock?_t=${Date.now()}`, { signal: controller.signal })
       .then(r => {
         clearTimeout(timeoutId);
         if (!r.ok) {
@@ -356,7 +351,7 @@ function HealthTab() {
       {/* Sheet URL (for verification) */}
       <div className="rounded-xl p-3 bg-gray-50 border border-gray-200">
         <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Sheet URL</p>
-        <p className="text-xs text-muted-foreground break-all" dir="ltr">{SHEET_URL || "(not set)"}</p>
+        <p className="text-xs text-muted-foreground break-all" dir="ltr">{API_URL} (proxy → Apps Script hidden)</p>
       </div>
 
       {/* Help */}
