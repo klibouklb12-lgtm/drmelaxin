@@ -257,23 +257,29 @@ export default function AdminPage() {
         {tab === "stats" && (
           <div className="bg-white rounded-3xl p-6 shadow-lg border-2 space-y-3" style={{ borderColor: "rgba(139, 21, 56, 0.15)" }}>
             <h2 className="text-lg font-bold" style={{ fontFamily: "var(--font-arabic)", color: "var(--burgundy)" }}>الإحصائيات · Statistiques</h2>
-            {stats ? (
+            {stats?.error ? (
+              <div className="rounded-xl p-4 text-center text-sm" style={{ background: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.25)", color: "#991b1b", fontFamily: "var(--font-arabic)" }}>
+                ⚠️ تعذّر تحميل الإحصائيات ({stats.error})
+                <br />
+                <button onClick={() => setStats(null)} className="underline mt-2">إعادة المحاولة</button>
+              </div>
+            ) : stats ? (
               <div className="space-y-2">
                 <div className="flex justify-between py-2 border-b border-burgundy/10">
                   <span style={{ fontFamily: "var(--font-arabic)" }}>إجمالي الطلبات</span>
-                  <span className="font-bold">{stats.totalOrders}</span>
+                  <span className="font-bold">{stats.totalOrders ?? 0}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-burgundy/10">
                   <span style={{ fontFamily: "var(--font-arabic)" }}>إجمالي الإيرادات (دج)</span>
-                  <span className="font-bold">{stats.totalRevenue?.toLocaleString()}</span>
+                  <span className="font-bold">{stats.totalRevenue?.toLocaleString() ?? 0}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-burgundy/10">
                   <span style={{ fontFamily: "var(--font-arabic)" }}>متوسط قيمة الطلب</span>
-                  <span className="font-bold">{stats.averageOrderValue?.toLocaleString()}</span>
+                  <span className="font-bold">{(stats.avgOrder ?? 0).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-burgundy/10">
                   <span style={{ fontFamily: "var(--font-arabic)" }}>المخزون الحالي</span>
-                  <span className="font-bold" style={{ color: stats.lowStock ? "#f59e0b" : "#10b981" }}>{stats.stock}</span>
+                  <span className="font-bold" style={{ color: stats.lowStock ? "#f59e0b" : "#10b981" }}>{stats.stock ?? 0}</span>
                 </div>
                 {stats.topWilayas && stats.topWilayas.length > 0 && (
                   <div className="pt-2">
