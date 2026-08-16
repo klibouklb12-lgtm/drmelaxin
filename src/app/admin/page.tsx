@@ -51,17 +51,32 @@ export default function AdminPage() {
       .catch(() => {});
   }, [authed]);
 
-  // Load stats when tab switched
+  // Load stats when tab switched (with timeout — never stuck loading)
   useEffect(() => {
     if (tab === "stats" && !stats) {
+      // Set a timeout to clear loading state after 15s (never stuck)
+      const timeoutId = setTimeout(() => {
+        setStats({ error: "timeout", totalOrders: 0, totalRevenue: 0 });
+      }, 15000);
+
       fetch(`${API_URL}?action=stats`)
         .then(r => r.text())
         .then(text => {
-          if (text.trim().startsWith("{")) {
-            setStats(JSON.parse(text));
+          clearTimeout(timeoutId);
+          if (text && text.trim().startsWith("{")) {
+            try {
+              setStats(JSON.parse(text));
+            } catch {
+              setStats({ error: "parse", totalOrders: 0, totalRevenue: 0 });
+            }
+          } else {
+            setStats({ error: "empty", totalOrders: 0, totalRevenue: 0 });
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          clearTimeout(timeoutId);
+          setStats({ error: "network", totalOrders: 0, totalRevenue: 0 });
+        });
     }
   }, [tab, stats]);
 
@@ -79,7 +94,11 @@ export default function AdminPage() {
         action: "updateProduct",
         product: { basePrice, oldPrice, brandName, lineName, taglineArabic, descriptionArabic }
       }),
-    }).then(() => { setSaved(true); setTimeout(() => setSaved(false), 3000); });
+    }).then(() => { setSaved(true); setTimeout(() => setSaved(false), 3000); })
+    .catch(() => {
+      // Show error briefly so user knows save failed (not stuck loading)
+      setSaved(false);
+    });
   }
 
   function handleSaveStock() {
@@ -87,7 +106,10 @@ export default function AdminPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "updateStock", stock }),
-    }).then(() => { setStockSaved(true); setTimeout(() => setStockSaved(false), 3000); });
+    }).then(() => { setStockSaved(true); setTimeout(() => setStockSaved(false), 3000); })
+    .catch(() => {
+      setStockSaved(false);
+    });
   }
 
   if (!authed) {

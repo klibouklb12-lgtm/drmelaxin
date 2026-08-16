@@ -66,22 +66,29 @@ export function Storefront() {
         .then(text => {
           if (!isMounted) return;
           clearTimeout(timeoutId);
-          if (!text.trim().startsWith("{")) return;
+          if (!text || !text.trim().startsWith("{")) return;
           try {
             const data = JSON.parse(text);
-            if (data.stock !== undefined && typeof data.stock === "number") {
-              setStock(data.stock);
-              setLowStock(data.lowStock);
-              setOutOfStock(data.outOfStock);
-              try {
-                localStorage.setItem(STOCK_CACHE_KEY, JSON.stringify({
-                  stock: data.stock,
-                  lowStock: data.lowStock,
-                  outOfStock: data.outOfStock,
-                  timestamp: Date.now()
-                }));
-              } catch {}
-            }
+            // Sanitize stock value: must be a non-negative number
+            let stockVal = typeof data.stock === "number" ? data.stock : parseInt(String(data.stock), 10);
+            if (isNaN(stockVal) || stockVal < 0) stockVal = 0;
+
+            // Derive lowStock/outOfStock safely (don't trust server booleans)
+            const low = stockVal > 0 && stockVal <= 3;
+            const out = stockVal <= 0;
+
+            setStock(stockVal);
+            setLowStock(low);
+            setOutOfStock(out);
+
+            try {
+              localStorage.setItem(STOCK_CACHE_KEY, JSON.stringify({
+                stock: stockVal,
+                lowStock: low,
+                outOfStock: out,
+                timestamp: Date.now()
+              }));
+            } catch {}
           } catch {}
         })
         .catch(() => {
@@ -294,11 +301,45 @@ function PhotoCarousel() {
 
   useEffect(() => {
     if (isPaused) return;
+    // Pause carousel when tab is hidden (saves CPU/battery on mobile)
+    if (document.hidden) return;
     timerRef.current = setInterval(next, CAROUSEL_INTERVAL);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [next, isPaused]);
+
+  // Pause when tab hidden, resume when visible
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) {
+        if (timerRef.current) clearInterval(timerRef.current);
+      } else if (!isPaused) {
+        timerRef.current = setInterval(next, CAROUSEL_INTERVAL);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [next, isPaused]);
+
+  // Don't render carousel at all if no photos (prevents crash)
+  if (total === 0 || !currentPhoto) {
+    return (
+      <section className="relative w-full px-4 pt-1 pb-3">
+        <div className="relative max-w-sm mx-auto">
+          <div className="relative aspect-square rounded-[1.75rem] overflow-hidden bg-cream flex items-center justify-center"
+            style={{ border: "3px solid rgba(255, 255, 255, 1)" }}>
+            <span className="text-muted-foreground text-sm" style={{ fontFamily: "var(--font-arabic)" }}>
+              صورة المنتج · Image
+            </span>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section
@@ -312,18 +353,20 @@ function PhotoCarousel() {
           style={{ border: "3px solid rgba(255, 255, 255, 1)" }}
         >
           {/* Only render the current photo — with blur-up + scale-in transition */}
-          {currentPhoto && (
-            <Image
-              key={safeIndex}
-              src={currentPhoto.src}
-              alt={currentPhoto.alt}
-              fill
-              priority={safeIndex <= 1}
-              quality={85}
-              sizes="(max-width: 768px) 100vw, 384px"
-              className="object-cover carousel-image-in"
-            />
-          )}
+          <Image
+            key={safeIndex}
+            src={currentPhoto.src}
+            alt={currentPhoto.alt}
+            fill
+            priority={safeIndex <= 1}
+            quality={85}
+            sizes="(max-width: 768px) 100vw, 384px"
+            className="object-cover carousel-image-in"
+            onError={(e) => {
+              // Hide broken image, show fallback
+              (e.target as HTMLImageElement).style.opacity = "0";
+            }}
+          />
 
           {/* Badge — "مضاد للتجاعيد" */}
           <div className="absolute top-3 right-3 z-10">
@@ -343,7 +386,7 @@ function PhotoCarousel() {
 
           <button
             type="button"
-            onClick={() => goTo((index - 1 + total) % total)}
+            onClick={() => goTo(safeIndex - 1)}
             aria-label="السابق"
             className="btn-elegant absolute top-1/2 left-2 -translate-y-1/2 z-10 w-9 h-9 rounded-full bg-white/95 backdrop-blur-sm shadow-md flex items-center justify-center text-burgundy"
           >
@@ -353,7 +396,7 @@ function PhotoCarousel() {
           </button>
           <button
             type="button"
-            onClick={() => goTo((index + 1) % total)}
+            onClick={() => goTo(safeIndex + 1)}
             aria-label="التالي"
             className="btn-elegant absolute top-1/2 right-2 -translate-y-1/2 z-10 w-9 h-9 rounded-full bg-white/95 backdrop-blur-sm shadow-md flex items-center justify-center text-burgundy"
           >
