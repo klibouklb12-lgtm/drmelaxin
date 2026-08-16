@@ -243,7 +243,7 @@ function TitleHeader() {
             }}
           >
             <Image
-              src={cdn("/logo.jpg")}
+              src={cdn("/logo.webp")}
               alt="Dr.Melaxin — ParaPharma"
               width={140}
               height={125}

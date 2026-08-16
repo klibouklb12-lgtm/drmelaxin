@@ -51,13 +51,13 @@ export const PRODUCT: ProductConfig = {
   benefitsFrench: "Anti-ridules • Fermeté • Hydratation • Éclat",
 
   photos: [
-    { src: cdn("/gallery/hero.jpg"),            alt: "Dr.Melaxin Cemenrete CX" },
-    { src: cdn("/gallery/dramatic.jpg"),        alt: "Dr.Melaxin Cemenrete CX" },
-    { src: cdn("/gallery/texture.jpg"),         alt: "Dr.Melaxin Cemenrete CX" },
-    { src: cdn("/gallery/pearl.jpg"),           alt: "Dr.Melaxin Cemenrete CX" },
-    { src: cdn("/gallery/lifestyle.jpg"),       alt: "Dr.Melaxin Cemenrete CX" },
-    { src: cdn("/gallery/benefits-banner.jpg"), alt: "Dr.Melaxin Cemenrete CX" },
-    { src: cdn("/gallery/collage.jpg"),         alt: "Dr.Melaxin Cemenrete CX" },
+    { src: cdn("/gallery/hero.webp"),            alt: "Dr.Melaxin Cemenrete CX" },
+    { src: cdn("/gallery/dramatic.webp"),        alt: "Dr.Melaxin Cemenrete CX" },
+    { src: cdn("/gallery/texture.webp"),         alt: "Dr.Melaxin Cemenrete CX" },
+    { src: cdn("/gallery/pearl.webp"),           alt: "Dr.Melaxin Cemenrete CX" },
+    { src: cdn("/gallery/lifestyle.webp"),       alt: "Dr.Melaxin Cemenrete CX" },
+    { src: cdn("/gallery/benefits-banner.webp"), alt: "Dr.Melaxin Cemenrete CX" },
+    { src: cdn("/gallery/collage.webp"),         alt: "Dr.Melaxin Cemenrete CX" },
   ],
   imageAlt: "Dr.Melaxin Cemenrete CX — Calcium Volume Multi Balm",
 

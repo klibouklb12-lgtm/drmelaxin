@@ -20,7 +20,7 @@
  * ============================================================================
  */
 
-const CACHE_VERSION = 'v4'; // bumped: excluded Google Apps Script from cache
+const CACHE_VERSION = 'v5'; // bumped: WebP images
 const CACHE_NAME = `drmelaxin-${CACHE_VERSION}`;
 const HTML_CACHE = `drmelaxin-html-${CACHE_VERSION}`;
 const OFFLINE_URL = '/'; // fallback to cached homepage
