@@ -329,29 +329,43 @@ function PhotoCarousel() {
   // (JS modulo: -1 % 7 = -1, but we want 6)
   const goTo = useCallback((i: number) => setIndex(total > 0 ? ((i % total) + total) % total : 0), [total]);
 
+  // Single useEffect that handles BOTH isPaused AND document.visibility
+  // Prevents duplicate intervals (which was causing memory leak + double-advance)
   useEffect(() => {
-    if (isPaused) return;
-    // Pause carousel when tab is hidden (saves CPU/battery on mobile)
-    if (document.hidden) return;
-    timerRef.current = setInterval(next, CAROUSEL_INTERVAL);
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [next, isPaused]);
+    // Don't start interval if paused OR tab hidden
+    if (isPaused || document.hidden) return;
 
-  // Pause when tab hidden, resume when visible
+    timerRef.current = setInterval(next, CAROUSEL_INTERVAL);
+
+    // Cleanup: clear interval when deps change or component unmounts
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [next, isPaused]); // document.hidden checked via event listener below
+
+  // Handle visibility change separately (adds/removes listener)
   useEffect(() => {
     const handleVisibility = () => {
+      // When tab becomes hidden: clear interval
+      // When tab becomes visible: restart interval (if not paused)
       if (document.hidden) {
-        if (timerRef.current) clearInterval(timerRef.current);
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
       } else if (!isPaused) {
-        timerRef.current = setInterval(next, CAROUSEL_INTERVAL);
+        // Only start if not already running (prevents duplicate)
+        if (!timerRef.current) {
+          timerRef.current = setInterval(next, CAROUSEL_INTERVAL);
+        }
       }
     };
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       document.removeEventListener("visibilitychange", handleVisibility);
-      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [next, isPaused]);
 

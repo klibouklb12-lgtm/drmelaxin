@@ -200,6 +200,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       { headers: corsHeaders, status: 429 }
     );
   }
+
+  // Step 4: Forward to Apps Script via GET (since Apps Script POST was unreliable)
   // Build GET URL with query params (same as before, but now server-side — no PII leak)
   const params = new URLSearchParams();
   params.set("action", "order");

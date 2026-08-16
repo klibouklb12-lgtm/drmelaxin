@@ -69,16 +69,17 @@ export function OrderForm({
       const raw = localStorage.getItem(AUTOSAVE_KEY);
       if (!raw) return;
       const draft = JSON.parse(raw);
+      if (!draft || typeof draft.ts !== "number") return;
       if (Date.now() - draft.ts > 60 * 60 * 1000) {
         localStorage.removeItem(AUTOSAVE_KEY);
         return;
       }
-      if (draft.fullName) setFullName(draft.fullName);
-      if (draft.phone) setPhone(draft.phone);
+      if (typeof draft.fullName === "string") setFullName(draft.fullName);
+      if (typeof draft.phone === "string") setPhone(draft.phone);
       if (typeof draft.wilayaId === "number") setWilayaId(draft.wilayaId);
       if (typeof draft.communeId === "number") setCommuneId(draft.communeId);
-      if (typeof draft.quantity === "number") setQuantity(draft.quantity);
-      if (draft.notes) setNotes(draft.notes);
+      if (typeof draft.quantity === "number" && draft.quantity >= 1 && draft.quantity <= 4) setQuantity(draft.quantity);
+      if (typeof draft.notes === "string") setNotes(draft.notes);
     } catch {}
   }, []);
 
