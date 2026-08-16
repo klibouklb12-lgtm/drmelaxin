@@ -47,15 +47,24 @@ export function Storefront() {
     const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
     const checkStock = () => {
-      // Step 1: Show cached value instantly (for UX)
+      // Step 1: Show cached value instantly (for UX) — but only if < 1 hour old
       try {
         const cached = localStorage.getItem(STOCK_CACHE_KEY);
         if (cached) {
           const parsed = JSON.parse(cached);
-          if (isMounted) {
-            setStock(parsed.stock);
-            setLowStock(parsed.lowStock);
-            setOutOfStock(parsed.outOfStock);
+          // Only use cache if less than 1 hour old (prevents showing stale stock from days ago)
+          const CACHE_MAX_AGE = 60 * 60 * 1000; // 1 hour
+          if (parsed.timestamp && Date.now() - parsed.timestamp < CACHE_MAX_AGE) {
+            if (isMounted) {
+              let stockVal = typeof parsed.stock === "number" ? parsed.stock : parseInt(String(parsed.stock), 10);
+              if (isNaN(stockVal) || stockVal < 0) stockVal = 0;
+              setStock(stockVal);
+              setLowStock(stockVal > 0 && stockVal <= 3);
+              setOutOfStock(stockVal <= 0);
+            }
+          } else {
+            // Cache is stale — remove it so we don't trust it during fetch failure
+            localStorage.removeItem(STOCK_CACHE_KEY);
           }
         }
       } catch {}
@@ -290,14 +299,16 @@ function PhotoCarousel() {
   const total = photos.length;
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Guard against empty photos array (would cause modulo by zero / undefined access)
-  const safeIndex = total > 0 ? index % total : 0;
+  // Guard against empty photos array + negative index (JS modulo is negative for negative input)
+  const safeIndex = total > 0 ? ((index % total) + total) % total : 0;
   const currentPhoto = photos[safeIndex] || photos[0];
 
   const next = useCallback(() => {
-    setIndex((i) => total > 0 ? (i + 1) % total : 0);
+    setIndex((i) => total > 0 ? ((i + 1) % total + total) % total : 0);
   }, [total]);
-  const goTo = useCallback((i: number) => setIndex(total > 0 ? i % total : 0), [total]);
+  // Use ((i % total) + total) % total to handle negative numbers correctly
+  // (JS modulo: -1 % 7 = -1, but we want 6)
+  const goTo = useCallback((i: number) => setIndex(total > 0 ? ((i % total) + total) % total : 0), [total]);
 
   useEffect(() => {
     if (isPaused) return;

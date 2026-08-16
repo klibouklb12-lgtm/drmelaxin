@@ -32,23 +32,43 @@ export default function AdminPage() {
   // Stats
   const [stats, setStats] = useState<any>(null);
 
-  // Load product + stock via Pages Function proxy
+  // Load product + stock via Pages Function proxy (with timeout + isMounted + try/catch)
   useEffect(() => {
     if (!authed) return;
-    fetch(`${API_URL}?action=product`)
+
+    let isMounted = true;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000); // 12s timeout
+
+    fetch(`${API_URL}?action=product`, { signal: controller.signal })
       .then(r => r.text())
       .then(text => {
-        if (!text.trim().startsWith("{")) return;
-        const data = JSON.parse(text);
-        if (data.basePrice) setBasePrice(Number(data.basePrice));
-        if (data.oldPrice) setOldPrice(Number(data.oldPrice));
-        if (data.brandName) setBrandName(data.brandName);
-        if (data.lineName) setLineName(data.lineName);
-        if (data.taglineArabic) setTaglineArabic(data.taglineArabic);
-        if (data.descriptionArabic) setDescriptionArabic(data.descriptionArabic);
-        if (data.stock !== undefined) setStock(Number(data.stock));
+        if (!isMounted) return;
+        clearTimeout(timeoutId);
+        if (!text || !text.trim().startsWith("{")) return;
+        try {
+          const data = JSON.parse(text);
+          if (data.basePrice && !isNaN(Number(data.basePrice))) setBasePrice(Number(data.basePrice));
+          if (data.oldPrice && !isNaN(Number(data.oldPrice))) setOldPrice(Number(data.oldPrice));
+          if (data.brandName) setBrandName(String(data.brandName));
+          if (data.lineName) setLineName(String(data.lineName));
+          if (data.taglineArabic) setTaglineArabic(String(data.taglineArabic));
+          if (data.descriptionArabic) setDescriptionArabic(String(data.descriptionArabic));
+          if (data.stock !== undefined) {
+            const s = Number(data.stock);
+            if (!isNaN(s) && s >= 0) setStock(s);
+          }
+        } catch {}
       })
-      .catch(() => {});
+      .catch(() => {
+        clearTimeout(timeoutId);
+      });
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+      clearTimeout(timeoutId);
+    };
   }, [authed]);
 
   // Load stats when tab switched (with timeout — never stuck loading)
