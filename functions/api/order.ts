@@ -69,31 +69,35 @@ function getClientIP(request: Request): string {
   );
 }
 
-/** Check + increment rate limit in KV. Returns true if allowed. */
+/** Check rate limit in KV (read-only). Returns true if under limit. */
 async function checkRateLimit(
   env: Env,
   key: string,
   limit: number
 ): Promise<boolean> {
-  if (!env.DRMELAXIN_CACHE) return true; // KV not configured — allow
+  if (!env.DRMELAXIN_CACHE) return true;
 
   try {
     const current = await env.DRMELAXIN_CACHE.get(key);
     const count = current ? parseInt(current, 10) : 0;
+    return count < limit;
+  } catch {
+    return true; // KV error — allow
+  }
+}
 
-    if (count >= limit) {
-      return false; // Rate limited
-    }
+/** Increment rate limit counter (called only AFTER successful order). */
+async function incrementRateLimit(env: Env, key: string): Promise<void> {
+  if (!env.DRMELAXIN_CACHE) return;
 
-    // Increment
+  try {
+    const current = await env.DRMELAXIN_CACHE.get(key);
+    const count = current ? parseInt(current, 10) : 0;
     await env.DRMELAXIN_CACHE.put(key, String(count + 1), {
       expirationTtl: RATE_LIMIT_WINDOW,
     });
-
-    return true;
   } catch {
-    // KV error — allow (don't block sales)
-    return true;
+    // Silent fail — don't block on KV errors
   }
 }
 
@@ -179,7 +183,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     );
   }
 
-  // Step 3: Rate limiting (per phone + per IP)
+  // Step 3: Rate limiting (per phone + per IP) — CHECK ONLY, don't increment yet
+  // We increment AFTER successful order to avoid blocking retries
   const clientIP = getClientIP(request);
   const phoneKey = `rate:phone:${phone}`;
   const ipKey = `rate:ip:${clientIP}`;
@@ -195,8 +200,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       { headers: corsHeaders, status: 429 }
     );
   }
-
-  // Step 4: Forward to Apps Script via GET (since Apps Script POST was unreliable)
   // Build GET URL with query params (same as before, but now server-side — no PII leak)
   const params = new URLSearchParams();
   params.set("action", "order");
@@ -240,6 +243,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         await env.DRMELAXIN_CACHE.delete("stock:current");
       }
     } catch {}
+
+    // Increment rate limit ONLY on successful order (not on retries/failures)
+    if (data.success) {
+      await Promise.all([
+        incrementRateLimit(env, phoneKey),
+        incrementRateLimit(env, ipKey),
+      ]);
+    }
 
     return new Response(JSON.stringify(data), {
       headers: corsHeaders,

@@ -94,6 +94,9 @@ function doGet(e) {
     if (a === "stats") return out(getStats());
     if (a === "orders") return out(getOrders());
     if (a === "order") return out(addOrder(e.parameter));
+    // Admin actions (via Pages Function proxy — GET params)
+    if (a === "updateProduct") return out(updateProductFromParams(e.parameter));
+    if (a === "updateStock") return out(updateStockFromParams(e.parameter));
     return out({ error: "unknown action" });
   } catch (err) {
     return out({ error: err.toString() });
@@ -725,6 +728,38 @@ function updateProduct(pd) {
     }
   });
   return { success: true };
+}
+
+/**
+ * Update product from GET params (for Pages Function proxy).
+ * Converts flat query params to a product object.
+ */
+function updateProductFromParams(p) {
+  var product = {};
+  // Known product fields
+  var fields = ["basePrice", "oldPrice", "brandName", "lineName", "taglineArabic", "descriptionArabic"];
+  for (var i = 0; i < fields.length; i++) {
+    if (p[fields[i]] !== undefined) {
+      var val = p[fields[i]];
+      // Convert numeric fields
+      if (fields[i] === "basePrice" || fields[i] === "oldPrice") {
+        val = Number(val);
+      }
+      product[fields[i]] = val;
+    }
+  }
+  return updateProduct(product);
+}
+
+/**
+ * Update stock from GET params (for Pages Function proxy).
+ */
+function updateStockFromParams(p) {
+  var stockVal = parseInt(String(p.stock), 10);
+  if (isNaN(stockVal) || stockVal < 0) {
+    return { success: false, error: "Invalid stock value" };
+  }
+  return updateStock(stockVal);
 }
 
 // ============================================================================
