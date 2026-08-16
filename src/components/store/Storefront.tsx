@@ -27,7 +27,6 @@ type View = "landing" | "success";
 type StoredOrder = { id: string; orderNo: string; total: number };
 
 const CAROUSEL_INTERVAL = 5000;
-const SHEET_URL = process.env.NEXT_PUBLIC_GOOGLE_SHEET_URL || "";
 
 export function Storefront() {
   const [view, setView] = useState<View>("landing");
