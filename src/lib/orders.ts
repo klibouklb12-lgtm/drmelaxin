@@ -28,18 +28,16 @@ import { findCommune } from "@/lib/communes";
 import { sanitizeName, sanitizeNotes, normalizePhone, sanitizeQuantity } from "@/lib/sanitize";
 import type { OrderInput } from "@/lib/types";
 
-/** Price derivation (client-side, for display + sent to server). */
+/** Price derivation (client-side, for display + sent to server). NO DISCOUNTS. */
 function derivePrice(quantity: number, delivery: DeliveryId) {
   const unitPrice = PRODUCT.basePrice;
-  const tier = PRODUCT.tiers.find((t) => t.quantity === quantity);
-  const discount = tier ? tier.discount : 0;
-  const subTotal = tierSubtotal(quantity);
-  const fee = deliveryFee(delivery);
+  const subTotal = tierSubtotal(quantity); // basePrice × quantity (no discount)
+  const fee = deliveryFee(delivery); // always 0 (free shipping)
   return {
     unitPrice,
-    discount,
+    discount: 0, // NO discounts — always 0
     deliveryFee: fee,
-    total: subTotal + fee,
+    total: subTotal + fee, // = basePrice × quantity
   };
 }
 

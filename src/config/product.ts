@@ -1,12 +1,11 @@
 /**
  * PRODUCT — Dr.Melaxin Cemenrete CX
- * Price: 5800 → 3900 DA. FREE HOME SHIPPING.
+ * Price: 3900 DA flat (NO discounts). FREE HOME SHIPPING.
  */
 import { cdn } from "@/lib/cdn";
 
 export interface ProductTier {
   quantity: number;
-  discount: number;
 }
 
 export interface ProductConfig {
@@ -64,11 +63,13 @@ export const PRODUCT: ProductConfig = {
   oldPrice: 5800,
   basePrice: 3900,
 
+  // NO DISCOUNTS — flat price 3900 DA per unit
+  // Total = basePrice × quantity (no markdown, no tier discounts)
   tiers: [
-    { quantity: 1, discount: 0    },
-    { quantity: 2, discount: 0.10 },
-    { quantity: 3, discount: 0.15 },
-    { quantity: 4, discount: 0.20 },
+    { quantity: 1 },
+    { quantity: 2 },
+    { quantity: 3 },
+    { quantity: 4 },
   ],
 }
 
