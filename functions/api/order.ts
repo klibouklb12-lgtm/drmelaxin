@@ -201,8 +201,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     );
   }
 
-  // Step 4: Forward to Apps Script via GET (since Apps Script POST was unreliable)
-  // Build GET URL with query params (same as before, but now server-side — no PII leak)
+  // Step 4: Forward to Apps Script via GET
+  // Build GET URL with query params
   const params = new URLSearchParams();
   params.set("action", "order");
   params.set("fullName", fullName);
@@ -215,52 +215,68 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   params.set("idempotencyKey", idempotencyKey);
   params.set("_t", Date.now().toString());
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  // INTERNAL RETRY: Try Apps Script up to 3 times
+  // This handles concurrent load, lock contention, and temporary failures
+  // WITHOUT requiring the client to retry (faster UX)
+  const MAX_INTERNAL_RETRIES = 3;
+  const RETRY_DELAYS = [0, 1000, 2000]; // 0ms, 1s, 2s
 
-    const response = await fetch(`${sheetUrl}?${params.toString()}`, {
-      signal: controller.signal,
-    });
+  let lastError: string = "Unknown error";
 
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      throw new Error(`Apps Script returned ${response.status}`);
+  for (let attempt = 0; attempt < MAX_INTERNAL_RETRIES; attempt++) {
+    if (RETRY_DELAYS[attempt] > 0) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]));
     }
 
-    const text = await response.text();
-
-    // Validate response
-    if (!text.trim().startsWith("{")) {
-      throw new Error("Invalid response from Apps Script");
-    }
-
-    // Parse + re-serialize to ensure valid JSON
-    const data = JSON.parse(text);
-
-    // Invalidate stock cache (new order may have changed stock)
     try {
-      if (env.DRMELAXIN_CACHE) {
-        await env.DRMELAXIN_CACHE.delete("stock:current");
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+      const response = await fetch(`${sheetUrl}?${params.toString()}`, {
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        lastError = `Apps Script HTTP ${response.status}`;
+        continue; // retry
       }
-    } catch {}
 
-    // Increment rate limit ONLY on successful order (not on retries/failures)
-    if (data.success) {
-      await Promise.all([
-        incrementRateLimit(env, phoneKey),
-        incrementRateLimit(env, ipKey),
-      ]);
-    }
+      const text = await response.text();
 
-    // CRITICAL: Return correct HTTP status
-    // - 200: success
-    // - 400: validation error (client mistake — don't retry)
-    // - 500: server error (retry + queue offline)
-    let statusCode = 200;
-    if (!data.success) {
-      // Check if it's a validation error (client mistake) or server error
+      // Check for HTML response (broken deployment)
+      if (!text || !text.trim().startsWith("{")) {
+        lastError = "Apps Script returned non-JSON (deployment may be broken)";
+        continue; // retry
+      }
+
+      const data = JSON.parse(text);
+
+      // If success → return immediately
+      if (data.success && data.order) {
+        // Invalidate stock cache
+        try {
+          if (env.DRMELAXIN_CACHE) {
+            await env.DRMELAXIN_CACHE.delete("stock:current");
+          }
+        } catch {}
+
+        // Increment rate limit
+        try {
+          await Promise.all([
+            incrementRateLimit(env, phoneKey),
+            incrementRateLimit(env, ipKey),
+          ]);
+        } catch {}
+
+        return new Response(JSON.stringify(data), {
+          headers: corsHeaders,
+          status: 200,
+        });
+      }
+
+      // If validation error (client mistake) → don't retry, return 400
       const errStr = String(data.error || "").toLowerCase();
       const isValidation =
         errStr.includes("invalid name") ||
@@ -269,24 +285,32 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         errStr.includes("invalid total") ||
         errStr.includes("wilaya and commune") ||
         errStr.includes("out of stock");
-      statusCode = isValidation ? 400 : 500;
-    }
 
-    return new Response(JSON.stringify(data), {
-      headers: corsHeaders,
-      status: statusCode,
-    });
-  } catch (err) {
-    // Apps Script failed — return error so client can queue offline
-    return new Response(
-      JSON.stringify({
-        success: false,
-        error: "Backend unavailable",
-        type: "NETWORK",
-      }),
-      { headers: corsHeaders, status: 502 }
-    );
+      if (isValidation) {
+        return new Response(JSON.stringify(data), {
+          headers: corsHeaders,
+          status: 400,
+        });
+      }
+
+      // Server error (lock timeout, sheet error, etc.) → retry
+      lastError = data.error || "Server error";
+      // continue to next attempt
+    } catch (fetchErr) {
+      lastError = `Network error: ${String(fetchErr)}`;
+      // continue to next attempt
+    }
   }
+
+  // All retries exhausted → return 500 so client queues offline
+  return new Response(
+    JSON.stringify({
+      success: false,
+      error: "Backend unavailable after retries: " + lastError,
+      type: "SERVER",
+    }),
+    { headers: corsHeaders, status: 500 }
+  );
 };
 
 // Handle OPTIONS for preflight
