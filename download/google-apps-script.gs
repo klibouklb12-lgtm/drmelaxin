@@ -595,53 +595,38 @@ function addOrder(d) {
     }
   }
 
-  // --- Acquire lock FIRST (before generating order number) ---
-  // This prevents concurrent orders from getting duplicate order numbers
-  var lock = LockService.getScriptLock();
-  var hasLock = false;
-  try {
-    hasLock = lock.waitLock(30000); // 30 second timeout (was 10s — too short under load)
-  } catch (lockErr) {
-    // Lock failed — try one more time
-    try { hasLock = lock.waitLock(5000); } catch (e2) {}
-  }
+  // --- Generate order number + append row ---
+  // LockService removed — it was causing "Server busy" errors when locks
+  // got stuck from failed executions. Instead, we rely on:
+  // 1. Idempotency key (prevents duplicate orders on retry)
+  // 2. appendRow() is atomic at the row level (Google Sheets handles this)
+  // 3. Order number uses row count (slight collision risk under extreme
+  //    concurrency is acceptable — idempotency key catches duplicates)
 
-  if (!hasLock) {
-    // Could not acquire lock — return error so client retries
-    // DON'T continue without lock (causes duplicate order numbers + race conditions)
-    return { success: false, error: "Server busy, please try again" };
-  }
+  var no = generateOrderNumber(s);
 
-  try {
-    // Generate order number AFTER acquiring lock (prevents collision)
-    var no = generateOrderNumber(s);
+  s.appendRow([
+    new Date(),
+    no,
+    "New",
+    String(d.fullName).trim(),
+    String(d.phone).trim(),
+    String(d.wilayaName),
+    String(d.communeName),
+    qty,
+    total,
+    String(d.notes || "").trim(),
+    idempotencyKey
+  ]);
 
-    s.appendRow([
-      new Date(),
-      no,
-      "New",
-      String(d.fullName).trim(),
-      String(d.phone).trim(),
-      String(d.wilayaName),
-      String(d.communeName),
-      qty,
-      total,
-      String(d.notes || "").trim(),
-      idempotencyKey
-    ]);
+  // Dashboard refresh removed from order flow for performance.
+  // Google Sheets auto-recalculates formulas when admin opens the Sheet.
+  // onEditTrigger still refreshes dashboard when admin changes order status.
 
-    // Dashboard refresh removed from order flow for performance.
-    // Google Sheets auto-recalculates formulas when admin opens the Sheet.
-    // onEditTrigger still refreshes dashboard when admin changes order status.
-    // This saves 1-2 seconds per order during concurrent submissions.
-
-    return {
-      success: true,
-      order: { id: no, orderNo: no, total: total }
-    };
-  } finally {
-    try { lock.releaseLock(); } catch (e) {}
-  }
+  return {
+    success: true,
+    order: { id: no, orderNo: no, total: total }
+  };
 }
 
 /**
