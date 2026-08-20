@@ -32,8 +32,8 @@ interface Env {
 
 const FETCH_TIMEOUT_MS = 10000; // 10s (was 15s — too long for users to wait)
 const RATE_LIMIT_WINDOW = 3600; // 1 hour
-const RATE_LIMIT_PHONE = 3; // 3 orders/hour per phone
-const RATE_LIMIT_IP = 5; // 5 orders/hour per IP
+const RATE_LIMIT_PHONE = 20; // 20 orders/hour per phone (was 3 — too strict)
+const RATE_LIMIT_IP = 30; // 30 orders/hour per IP (was 5)
 
 // Algerian phone: 05/06/07 + 8 digits
 const PHONE_REGEX = /^0[567]\d{8}$/;

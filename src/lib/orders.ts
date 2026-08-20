@@ -67,9 +67,11 @@ export class OrderError extends Error {
 }
 
 // --- Per-device rate limiting (basic spam prevention) ---
+// RELAXED: 10 orders per 10 minutes (was 5 per minute)
+// This prevents casual spam without blocking legitimate repeat customers
 const RATE_LIMIT_KEY = "drmelaxin_order_times";
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-const RATE_LIMIT_MAX = 5; // 5 orders per minute per device
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+const RATE_LIMIT_MAX = 10; // 10 orders per 10 minutes per device
 
 function isRateLimited(): boolean {
   try {
