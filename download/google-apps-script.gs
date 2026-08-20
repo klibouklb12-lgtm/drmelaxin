@@ -94,12 +94,13 @@ function doGet(e) {
     if (a === "stats") return out(getStats());
     if (a === "orders") return out(getOrders());
     if (a === "order") return out(addOrder(e.parameter));
-    // Admin actions (via Pages Function proxy — GET params)
     if (a === "updateProduct") return out(updateProductFromParams(e.parameter));
     if (a === "updateStock") return out(updateStockFromParams(e.parameter));
-    return out({ error: "unknown action" });
+    return out({ success: false, error: "unknown action: " + a });
   } catch (err) {
-    return out({ error: err.toString() });
+    // CRITICAL: must return success:false so Pages Function returns 500 (not 400)
+    // Otherwise client treats server errors as validation errors → no retry → order lost
+    return out({ success: false, error: "Server error: " + err.toString() });
   }
 }
 
@@ -594,18 +595,27 @@ function addOrder(d) {
     }
   }
 
-  // --- Generate order number ---
-  var no = generateOrderNumber(s);
-
-  // --- Append row (atomic via LockService) ---
+  // --- Acquire lock FIRST (before generating order number) ---
+  // This prevents concurrent orders from getting duplicate order numbers
   var lock = LockService.getScriptLock();
+  var hasLock = false;
   try {
-    lock.waitLock(10000);
+    hasLock = lock.waitLock(30000); // 30 second timeout (was 10s — too short under load)
   } catch (lockErr) {
-    // Continue anyway
+    // Lock failed — try one more time
+    try { hasLock = lock.waitLock(5000); } catch (e2) {}
+  }
+
+  if (!hasLock) {
+    // Could not acquire lock — return error so client retries
+    // DON'T continue without lock (causes duplicate order numbers + race conditions)
+    return { success: false, error: "Server busy, please try again" };
   }
 
   try {
+    // Generate order number AFTER acquiring lock (prevents collision)
+    var no = generateOrderNumber(s);
+
     s.appendRow([
       new Date(),
       no,
@@ -632,6 +642,10 @@ function addOrder(d) {
   }
 }
 
+/**
+ * Generate unique order number: AUR-YYYY-NNNNNN
+ * Uses row count + timestamp suffix for uniqueness (prevents collision)
+ */
 function generateOrderNumber(s) {
   var lastRow = s.getLastRow();
   var n = lastRow > 1 ? lastRow - 1 : 0;

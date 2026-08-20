@@ -254,9 +254,27 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ]);
     }
 
+    // CRITICAL: Return correct HTTP status
+    // - 200: success
+    // - 400: validation error (client mistake — don't retry)
+    // - 500: server error (retry + queue offline)
+    let statusCode = 200;
+    if (!data.success) {
+      // Check if it's a validation error (client mistake) or server error
+      const errStr = String(data.error || "").toLowerCase();
+      const isValidation =
+        errStr.includes("invalid name") ||
+        errStr.includes("invalid phone") ||
+        errStr.includes("invalid quantity") ||
+        errStr.includes("invalid total") ||
+        errStr.includes("wilaya and commune") ||
+        errStr.includes("out of stock");
+      statusCode = isValidation ? 400 : 500;
+    }
+
     return new Response(JSON.stringify(data), {
       headers: corsHeaders,
-      status: data.success ? 200 : 400,
+      status: statusCode,
     });
   } catch (err) {
     // Apps Script failed — return error so client can queue offline
