@@ -30,7 +30,7 @@ interface Env {
   APPS_SCRIPT_URL: string;
 }
 
-const FETCH_TIMEOUT_MS = 15000;
+const FETCH_TIMEOUT_MS = 10000; // 10s (was 15s — too long for users to wait)
 const RATE_LIMIT_WINDOW = 3600; // 1 hour
 const RATE_LIMIT_PHONE = 3; // 3 orders/hour per phone
 const RATE_LIMIT_IP = 5; // 5 orders/hour per IP
@@ -216,10 +216,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
   params.set("_t", Date.now().toString());
 
   // INTERNAL RETRY: Try Apps Script up to 3 times
-  // This handles concurrent load, lock contention, and temporary failures
-  // WITHOUT requiring the client to retry (faster UX)
+  // Fast retries: 0ms, 500ms, 1s (total max ~1.5s overhead)
   const MAX_INTERNAL_RETRIES = 3;
-  const RETRY_DELAYS = [0, 1000, 2000]; // 0ms, 1s, 2s
+  const RETRY_DELAYS = [0, 500, 1000]; // 0ms, 500ms, 1s
 
   let lastError: string = "Unknown error";
 

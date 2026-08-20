@@ -132,6 +132,7 @@ async function postOrderOnce(
   idempotencyKey: string
 ): Promise<CreateOrderResult> {
   // POST to our own Pages Function (same-origin, no CORS, Apps Script URL hidden)
+  // Timeout: 10s (Pages Function retries internally, so 10s is enough)
   const response = await fetchWithTimeout(
     "/api/order",
     {
@@ -139,7 +140,7 @@ async function postOrderOnce(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...payload, idempotencyKey }),
     },
-    15000
+    10000
   );
 
   if (!response.ok) {
@@ -312,43 +313,23 @@ export async function createOrder(input: OrderInput): Promise<CreateOrderResult>
     idempotencyKey,
   };
 
-  // --- Retry with exponential backoff + jitter (prevents thundering herd) ---
-  const MAX_ATTEMPTS = 3;
-  const BASE_BACKOFF_MS = [0, 2000, 5000];
+  // --- Single attempt (Pages Function already retries internally 3x) ---
+  // Old code retried 3x with 2s/5s delays = 16+ seconds worst case
+  // Now: 1 attempt. If it fails, queue offline immediately.
+  // Pages Function handles internal retries (0s, 1s, 2s) = max 3s
 
-  let lastError: OrderError | null = null;
+  try {
+    const result = await postOrderOnce(payload, idempotencyKey);
+    return result;
+  } catch (err) {
+    lastError = err instanceof OrderError ? err : new OrderError("UNKNOWN", String(err));
 
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    // Wait before retry with jitter (prevents thundering herd at scale)
-    if (BASE_BACKOFF_MS[attempt] > 0) {
-      const jitter = Math.random() * 1000; // 0-1000ms random jitter
-      await new Promise((r) => setTimeout(r, BASE_BACKOFF_MS[attempt] + jitter));
+    // Don't queue validation or rate limit errors
+    if (lastError.type !== "VALIDATION" && lastError.type !== "RATE_LIMIT") {
+      // Queue for offline retry (will be sent on next visit)
+      queueOfflineOrder(payload, idempotencyKey);
     }
-
-    try {
-      const result = await postOrderOnce(payload, idempotencyKey);
-      return result;
-    } catch (err) {
-      lastError = err instanceof OrderError ? err : new OrderError("UNKNOWN", String(err));
-
-      // Don't retry on validation or rate limit errors
-      if (lastError.type === "VALIDATION" || lastError.type === "RATE_LIMIT") {
-        throw lastError;
-      }
-
-      // On last attempt, queue offline if it's a network/timeout issue
-      if (attempt === MAX_ATTEMPTS - 1) {
-        if (
-          lastError.type === "NETWORK" ||
-          lastError.type === "TIMEOUT" ||
-          lastError.type === "SERVER"
-        ) {
-          queueOfflineOrder(payload, idempotencyKey);
-        }
-        throw lastError;
-      }
-      // Otherwise, retry
-    }
+    throw lastError;
   }
 
   // Should never reach here, but just in case
