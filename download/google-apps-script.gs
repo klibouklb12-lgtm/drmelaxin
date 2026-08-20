@@ -630,8 +630,9 @@ function addOrder(d) {
       idempotencyKey
     ]);
 
-    // Auto-refresh dashboard (non-blocking, failsafe)
-    try { refreshDashboard(); } catch (e) {}
+    // NOTE: Dashboard refresh removed from order flow for performance.
+    // Google Sheets auto-recalculates formulas when admin opens the Sheet.
+    // This saves 1-2 seconds per order during concurrent submissions.
 
     return {
       success: true,
