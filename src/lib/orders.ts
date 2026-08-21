@@ -318,7 +318,9 @@ export async function createOrder(input: OrderInput): Promise<CreateOrderResult>
   // --- Single attempt (Pages Function already retries internally 3x) ---
   // Old code retried 3x with 2s/5s delays = 16+ seconds worst case
   // Now: 1 attempt. If it fails, queue offline immediately.
-  // Pages Function handles internal retries (0s, 1s, 2s) = max 3s
+  // Pages Function handles internal retries (0ms, 500ms, 1s) = max 1.5s overhead
+
+  let lastError: OrderError | null = null;
 
   try {
     const result = await postOrderOnce(payload, idempotencyKey);
