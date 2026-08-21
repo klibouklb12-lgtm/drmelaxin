@@ -30,10 +30,7 @@ interface Env {
   APPS_SCRIPT_URL: string;
 }
 
-const FETCH_TIMEOUT_MS = 10000; // 10s (was 15s — too long for users to wait)
-const RATE_LIMIT_WINDOW = 3600; // 1 hour
-const RATE_LIMIT_PHONE = 20; // 20 orders/hour per phone (was 3 — too strict)
-const RATE_LIMIT_IP = 30; // 30 orders/hour per IP (was 5)
+const FETCH_TIMEOUT_MS = 10000; // 10s
 
 // Algerian phone: 05/06/07 + 8 digits
 const PHONE_REGEX = /^0[567]\d{8}$/;
@@ -60,46 +57,9 @@ function sanitize(input: string): string {
     .trim();
 }
 
-/** Get client IP from Cloudflare headers. */
-function getClientIP(request: Request): string {
-  return (
-    request.headers.get("CF-Connecting-IP") ||
-    request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ||
-    "unknown"
-  );
-}
-
-/** Check rate limit in KV (read-only). Returns true if under limit. */
-async function checkRateLimit(
-  env: Env,
-  key: string,
-  limit: number
-): Promise<boolean> {
-  if (!env.DRMELAXIN_CACHE) return true;
-
-  try {
-    const current = await env.DRMELAXIN_CACHE.get(key);
-    const count = current ? parseInt(current, 10) : 0;
-    return count < limit;
-  } catch {
-    return true; // KV error — allow
-  }
-}
-
-/** Increment rate limit counter (called only AFTER successful order). */
-async function incrementRateLimit(env: Env, key: string): Promise<void> {
-  if (!env.DRMELAXIN_CACHE) return;
-
-  try {
-    const current = await env.DRMELAXIN_CACHE.get(key);
-    const count = current ? parseInt(current, 10) : 0;
-    await env.DRMELAXIN_CACHE.put(key, String(count + 1), {
-      expirationTtl: RATE_LIMIT_WINDOW,
-    });
-  } catch {
-    // Silent fail — don't block on KV errors
-  }
-}
+// NOTE: KV-based rate limiting removed to save 5,000+ KV writes/day at scale.
+// Rate limiting is now client-side only (10 orders/10min per device).
+// Server-side validation + idempotency key still protect against duplicates.
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   const env = context.env;
@@ -183,23 +143,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     );
   }
 
-  // Step 3: Rate limiting (per phone + per IP) — CHECK ONLY, don't increment yet
-  // We increment AFTER successful order to avoid blocking retries
-  const clientIP = getClientIP(request);
-  const phoneKey = `rate:phone:${phone}`;
-  const ipKey = `rate:ip:${clientIP}`;
-
-  const [phoneAllowed, ipAllowed] = await Promise.all([
-    checkRateLimit(env, phoneKey, RATE_LIMIT_PHONE),
-    checkRateLimit(env, ipKey, RATE_LIMIT_IP),
-  ]);
-
-  if (!phoneAllowed || !ipAllowed) {
-    return new Response(
-      JSON.stringify({ success: false, error: "RATE_LIMIT" }),
-      { headers: corsHeaders, status: 429 }
-    );
-  }
+  // Step 3: Rate limiting is now CLIENT-SIDE ONLY (10 orders/10min per device).
+  // Server-side validation + idempotency key still protect against duplicates.
+  // This saves 5,000+ KV writes/day at scale (was the #1 free-tier breaker).
 
   // Step 4: Forward to Apps Script via GET
   // Build GET URL with query params
@@ -254,20 +200,14 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
       // If success → return immediately
       if (data.success && data.order) {
-        // Invalidate stock cache
-        try {
-          if (env.DRMELAXIN_CACHE) {
-            await env.DRMELAXIN_CACHE.delete("stock:current");
-          }
-        } catch {}
+        // NOTE: Stock cache invalidation removed.
+        // The 4-minute client cache + 5-min KV TTL handle freshness.
+        // This saves 2,500 KV deletes/day at 50K visits.
 
-        // Increment rate limit
-        try {
-          await Promise.all([
-            incrementRateLimit(env, phoneKey),
-            incrementRateLimit(env, ipKey),
-          ]);
-        } catch {}
+        // NOTE: KV-based rate limiting removed.
+        // Rate limiting is now client-side only (10 orders/10min).
+        // This saves 5,000 KV writes/day at 50K visits.
+        // Server-side validation + idempotency still protect against duplicates.
 
         return new Response(JSON.stringify(data), {
           headers: corsHeaders,
